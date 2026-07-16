@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+
+# Android build artifacts (но не исходники)
+android/app/build/
+android/.gradle/
+android/build/
+android/capacitor-*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# APK в корне (опционально)
+*.apk

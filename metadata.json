@@ -1,0 +1,6 @@
+{
+  "name": "Ritual",
+  "description": "Эстетичный и минималистичный дашборд благополучия с глубоким дизайном в стиле Living Glass",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
