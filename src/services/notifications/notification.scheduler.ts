@@ -1,8 +1,19 @@
 import { notificationService } from './notification.service';
 import { NotificationType, STORAGE_KEYS } from './notification.types';
 
+let reschedulePromise: Promise<void> | null = null;
+
 function todayKey(): string {
   return new Date().toISOString().split('T')[0];
+}
+
+function stableNotificationId(key: string): number {
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = ((hash << 5) - hash) + key.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash % 1000000000) + 100000;
 }
 
 function getTimelineSlots(): { id: string; time: string; practiceId: string }[] {
@@ -66,6 +77,7 @@ export async function scheduleTimelineReminders(): Promise<void> {
     // If NOT completed, schedule a repeating daily reminder (repeats = true)
     await notificationService.scheduleAtTime(
       {
+        id: stableNotificationId(`practice:${slot.id}`),
         type: NotificationType.PracticeReminder,
         title: 'Пора практиковаться',
         body: `Сегодня: ${practiceName}`,
@@ -79,6 +91,7 @@ export async function scheduleTimelineReminders(): Promise<void> {
     const soonTime = subtractMinutesFromTime(slot.time, 7);
     await notificationService.scheduleAtTime(
       {
+        id: stableNotificationId(`practice-soon:${slot.id}`),
         type: NotificationType.PracticeSoon,
         title: 'Скоро начало практики',
         body: `Через 7 минут начнется практика: ${practiceName}`,
@@ -112,6 +125,7 @@ export async function scheduleStreakReminder(): Promise<void> {
   // If not completed today, schedule a repeating daily warning starting today (repeats = true)
   await notificationService.scheduleAtTime(
     {
+      id: stableNotificationId('streak-warning'),
       type: NotificationType.StreakWarning,
       title: 'Не прерывайте серию!',
       body: 'Сегодня вы ещё не практиковались. Не теряйте свой прогресс!',
@@ -196,6 +210,7 @@ export async function scheduleSubscriptionWarning(daysLeft: number): Promise<num
 export async function scheduleIntentionReminder(): Promise<void> {
   await notificationService.scheduleAtTime(
     {
+      id: stableNotificationId('intention-reminder'),
       type: NotificationType.IntentionReminder,
       title: 'Намерение на день',
       body: 'Пора выбрать намерение на день, чтобы настроить фокус и сохранить осознанность.',
@@ -207,10 +222,18 @@ export async function scheduleIntentionReminder(): Promise<void> {
 }
 
 export async function rescheduleAll(): Promise<void> {
-  await notificationService.rescheduleAll();
-  if (!notificationService.isNotificationsEnabled()) return;
+  if (reschedulePromise) return reschedulePromise;
 
-  await scheduleTimelineReminders();
-  await scheduleStreakReminder();
-  await scheduleIntentionReminder();
+  reschedulePromise = (async () => {
+    await notificationService.rescheduleAll();
+    if (!notificationService.isNotificationsEnabled()) return;
+
+    await scheduleTimelineReminders();
+    await scheduleStreakReminder();
+    await scheduleIntentionReminder();
+  })().finally(() => {
+    reschedulePromise = null;
+  });
+
+  return reschedulePromise;
 }

@@ -4,6 +4,55 @@ let initialized = false;
 let PushNotifications: any = null;
 let LocalNotifications: any = null;
 let pluginsLoaded = false;
+const CHANNEL_ID = 'ritual-reminders';
+
+function createNotificationId(): number {
+  return Math.floor(Math.random() * 2147483646) + 1;
+}
+
+function normalizeNotificationData(data?: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(data ?? {}).map(([k, v]) => [k, String(v)])
+  );
+}
+
+async function canUseExactAlarm(): Promise<boolean> {
+  if (!LocalNotifications?.checkExactNotificationSetting) return false;
+
+  try {
+    const result = await LocalNotifications.checkExactNotificationSetting();
+    return Object.values(result ?? {}).some((value) => value === 'granted');
+  } catch (e) {
+    console.warn('[NotificationService] Exact alarm setting check failed:', e);
+    return false;
+  }
+}
+
+async function scheduleWithFallback(notification: any, prefersExact = false): Promise<void> {
+  const baseSchedule = notification.schedule ?? {};
+  const shouldUseExact = prefersExact && await canUseExactAlarm();
+
+  const schedule = {
+    ...baseSchedule,
+    ...(shouldUseExact ? { exact: true } : {}),
+  };
+
+  try {
+    await LocalNotifications.schedule({
+      notifications: [{ ...notification, schedule }],
+    });
+  } catch (exactError) {
+    if (!schedule.exact) throw exactError;
+
+    console.warn('[NotificationService] Failed to schedule exact notification, trying inexact:', exactError);
+    const fallbackSchedule = { ...schedule };
+    delete fallbackSchedule.exact;
+
+    await LocalNotifications.schedule({
+      notifications: [{ ...notification, schedule: fallbackSchedule }],
+    });
+  }
+}
 
 async function loadPlugins(): Promise<boolean> {
   if (pluginsLoaded) return !!LocalNotifications;
@@ -167,57 +216,32 @@ async function scheduleLocal(payload: NotificationPayload, delaySeconds: number)
     await loadPlugins();
     if (!LocalNotifications) return null;
 
-    const id = Math.floor(Math.random() * 2147483646) + 1;
+    const id = payload.id ?? createNotificationId();
     const date = new Date(Date.now() + delaySeconds * 1000);
 
     const notificationConfig: any = {
       title: payload.title,
       body: payload.body,
       id,
+      channelId: CHANNEL_ID,
       smallIcon: 'ic_launcher',
       largeIcon: 'ic_launcher',
-      android: {
-        channelId: 'ritual-reminders',
-        importance: 4,
-        pressAction: { id: 'default' },
-      },
       extra: {
         type: String(payload.type),
-        ...Object.fromEntries(
-          Object.entries(payload.data ?? {}).map(([k, v]) => [k, String(v)])
-        ),
+        ...normalizeNotificationData(payload.data),
       },
     };
 
-    try {
-      // Attempt exact scheduling first
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            ...notificationConfig,
-            schedule: { 
-              at: date,
-              allowWhileIdle: true,
-              exact: true
-            }
-          }
-        ]
-      });
-    } catch (exactError) {
-      console.warn('[NotificationService] Failed to schedule exact target notification, trying inexact:', exactError);
-      // Fallback to non-exact scheduling to prevent SecurityException crashes on Android 14+
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            ...notificationConfig,
-            schedule: { 
-              at: date,
-              allowWhileIdle: true
-            }
-          }
-        ]
-      });
-    }
+    await scheduleWithFallback(
+      {
+        ...notificationConfig,
+        schedule: {
+          at: date,
+          allowWhileIdle: true,
+        },
+      },
+      true,
+    );
 
     const scheduled = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
     scheduled.push({ id, type: payload.type, title: payload.title, body: payload.body, scheduledDate: date.toISOString(), data: payload.data });
@@ -243,36 +267,26 @@ async function scheduleAtTime(
     if (!LocalNotifications) return null;
 
     const [hours, minutes] = timeHHMM.split(':').map(Number);
-    const id = Math.floor(Math.random() * 2147483646) + 1;
+    const id = payload.id ?? createNotificationId();
 
     const notificationConfig: any = {
       title: payload.title,
       body: payload.body,
       id,
+      channelId: CHANNEL_ID,
       smallIcon: 'ic_launcher',
       largeIcon: 'ic_launcher',
-      android: {
-        channelId: 'ritual-reminders',
-        importance: 4,
-        pressAction: { id: 'default' },
-      },
       extra: {
         type: String(payload.type),
-        ...Object.fromEntries(
-          Object.entries(payload.data ?? {}).map(([k, v]) => [k, String(v)])
-        ),
+        ...normalizeNotificationData(payload.data),
       },
     };
 
-    const scheduleOpts: any = {
-      allowWhileIdle: true,
-      exact: true,
-    };
+    const scheduleOpts: any = {};
 
     if (repeats) {
       scheduleOpts.on = { hour: hours, minute: minutes };
       scheduleOpts.repeats = true;
-      scheduleOpts.every = 'day';
     } else {
       const now = new Date();
       const target = new Date();
@@ -281,31 +295,16 @@ async function scheduleAtTime(
         target.setDate(target.getDate() + 1);
       }
       scheduleOpts.at = target;
+      scheduleOpts.allowWhileIdle = true;
     }
 
-    try {
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            ...notificationConfig,
-            schedule: scheduleOpts,
-          },
-        ],
-      });
-    } catch (exactError) {
-      console.warn('[NotificationService] Failed to schedule exact target notification, trying inexact:', exactError);
-      const fallbackSchedule = { ...scheduleOpts };
-      delete fallbackSchedule.exact;
-      
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            ...notificationConfig,
-            schedule: fallbackSchedule,
-          },
-        ],
-      });
-    }
+    await scheduleWithFallback(
+      {
+        ...notificationConfig,
+        schedule: scheduleOpts,
+      },
+      !repeats,
+    );
 
     const scheduled = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
     scheduled.push({
@@ -346,7 +345,7 @@ async function init(
   if (isNative() && LocalNotifications) {
     try {
       await LocalNotifications.createChannel({
-        id: 'ritual-reminders',
+        id: CHANNEL_ID,
         name: 'Напоминания Ritual',
         description: 'Уведомления о практиках и напоминаниях серии дней',
         importance: 4,

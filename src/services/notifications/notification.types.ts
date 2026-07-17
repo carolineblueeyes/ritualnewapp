@@ -20,6 +20,7 @@ export interface ScheduledNotification {
 }
 
 export interface NotificationPayload {
+  id?: number;
   type: NotificationType;
   title: string;
   body: string;
