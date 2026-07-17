@@ -535,7 +535,9 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
               setNotificationsEnabled(next);
               localStorage.setItem(STORAGE_KEYS.enabled, next ? 'true' : 'false');
               if (next) {
-                await rescheduleAll();
+                window.setTimeout(() => {
+                  rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule notifications:', e));
+                }, 250);
               } else {
                 await notificationService.cancelAll();
               }
@@ -679,7 +681,9 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
                       setReminderTime(t);
                       localStorage.setItem(STORAGE_KEYS.reminderTime, t);
                       setShowTimePicker(false);
-                      if (notificationsEnabled) rescheduleAll();
+                      if (notificationsEnabled) {
+                        rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule reminder time:', e));
+                      }
                     }}
                     className={`w-full py-3 rounded-xl text-sm font-mono transition-all ${
                       reminderTime === t

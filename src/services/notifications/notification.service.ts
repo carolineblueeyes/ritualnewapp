@@ -102,25 +102,26 @@ async function requestPermission(): Promise<boolean> {
   if (!isNative()) return false;
   try {
     await loadPlugins();
-    let localGranted = false;
-    let pushGranted = false;
-    
-    if (LocalNotifications) {
-      const result = await LocalNotifications.requestPermissions();
-      localGranted = result.display === 'granted';
-    }
-    
-    if (PushNotifications) {
-      try {
-        const result = await PushNotifications.requestPermissions();
-        pushGranted = result.receive === 'granted';
-      } catch (e) {
-        console.warn('[NotificationService] Push requestPermissions failed:', e);
-      }
-    }
-    
-    return localGranted || pushGranted;
-  } catch {
+    if (!LocalNotifications) return false;
+
+    const result = await LocalNotifications.requestPermissions();
+    return result.display === 'granted';
+  } catch (e) {
+    console.warn('[NotificationService] Local requestPermissions failed:', e);
+    return false;
+  }
+}
+
+async function checkPermission(): Promise<boolean> {
+  if (!isNative()) return false;
+  try {
+    await loadPlugins();
+    if (!LocalNotifications?.checkPermissions) return false;
+
+    const result = await LocalNotifications.checkPermissions();
+    return result.display === 'granted';
+  } catch (e) {
+    console.warn('[NotificationService] Local checkPermissions failed:', e);
     return false;
   }
 }
@@ -211,6 +212,7 @@ async function cancelAll(): Promise<void> {
 async function scheduleLocal(payload: NotificationPayload, delaySeconds: number): Promise<number | null> {
   if (!isNotificationsEnabled()) return null;
   if (!isNative()) return null;
+  if (!await checkPermission()) return null;
 
   try {
     await loadPlugins();
@@ -261,6 +263,7 @@ async function scheduleAtTime(
 ): Promise<number | null> {
   if (!isNotificationsEnabled()) return null;
   if (!isNative()) return null;
+  if (!await checkPermission()) return null;
 
   try {
     await loadPlugins();
@@ -357,13 +360,11 @@ async function init(
     }
   }
   addListeners(onNotificationReceived, onNotificationOpened);
-  if (isNative()) {
-    await registerForPush();
-  }
 }
 
 export const notificationService = {
   init,
+  checkPermission,
   requestPermission,
   registerForPush,
   cancelAll,

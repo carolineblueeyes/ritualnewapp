@@ -227,6 +227,7 @@ export async function rescheduleAll(): Promise<void> {
   reschedulePromise = (async () => {
     await notificationService.rescheduleAll();
     if (!notificationService.isNotificationsEnabled()) return;
+    if (notificationService.isNative() && !await notificationService.checkPermission()) return;
 
     await scheduleTimelineReminders();
     await scheduleStreakReminder();

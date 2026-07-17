@@ -272,17 +272,17 @@ export default function App() {
           setActiveTab('profile');
         }
       }
-    );
-    if (notificationService.isNotificationsEnabled()) {
-      rescheduleAll();
-    }
+    ).catch(e => console.warn('[App] Notification init failed:', e));
   }, []);
 
   // Reschedule notifications when onboarding completes
   useEffect(() => {
     if (onboardingCompleted && notificationService.isNotificationsEnabled()) {
-      rescheduleAll();
-      scheduleSocialInvite();
+      notificationService.checkPermission().then((granted) => {
+        if (!granted) return;
+        rescheduleAll();
+        scheduleSocialInvite();
+      }).catch(e => console.warn('[App] Failed to reschedule notifications:', e));
     }
   }, [onboardingCompleted]);
 
