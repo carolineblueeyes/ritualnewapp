@@ -55,7 +55,6 @@ function subtractMinutesFromTime(timeHHMM: string, minutesToSubtract: number): s
 export async function scheduleTimelineReminders(): Promise<void> {
   const slots = getTimelineSlots();
   const completed = getCompletedSlots();
-  const now = new Date();
 
   for (const slot of slots) {
     if (!slot.practiceId) continue;
@@ -63,63 +62,31 @@ export async function scheduleTimelineReminders(): Promise<void> {
     const practiceName = getPracticeName(slot.practiceId);
     const isCompleted = !!completed[slot.id];
 
-    // Compute delay in seconds for today's slot time
-    const [sh, sm] = slot.time.split(':').map(Number);
-    const slotDate = new Date();
-    slotDate.setHours(sh, sm, 0, 0);
-    const delaySec = Math.floor((slotDate.getTime() - now.getTime()) / 1000);
+    // If completed today, schedule a one-shot reminder for tomorrow (repeats = false)
+    // If NOT completed, schedule a repeating daily reminder (repeats = true)
+    await notificationService.scheduleAtTime(
+      {
+        type: NotificationType.PracticeReminder,
+        title: 'Пора практиковаться',
+        body: `Сегодня: ${practiceName}`,
+        data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
+      },
+      slot.time,
+      !isCompleted,
+    );
 
-    if (delaySec > 0) {
-      // Slot time is still ahead today — fire with relative delay (guaranteed on time)
-      await notificationService.scheduleLocal(
-        {
-          type: NotificationType.PracticeReminder,
-          title: 'Пора практиковаться',
-          body: `Сегодня: ${practiceName}`,
-          data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
-        },
-        delaySec,
-      );
-
-      // 7 minutes before practice (delaySec - 420), but never negative
-      const soonDelay = delaySec - 420;
-      if (soonDelay > 0) {
-        await notificationService.scheduleLocal(
-          {
-            type: NotificationType.PracticeSoon,
-            title: 'Скоро начало практики',
-            body: `Через 7 минут начнется практика: ${practiceName}`,
-            data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
-          },
-          soonDelay,
-        );
-      }
-    } else if (!isCompleted) {
-      // Slot time has passed today and not completed — schedule repeating for tomorrow+
-      await notificationService.scheduleAtTime(
-        {
-          type: NotificationType.PracticeReminder,
-          title: 'Пора практиковаться',
-          body: `Сегодня: ${practiceName}`,
-          data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
-        },
-        slot.time,
-        true,
-      );
-
-      const soonTime = subtractMinutesFromTime(slot.time, 7);
-      await notificationService.scheduleAtTime(
-        {
-          type: NotificationType.PracticeSoon,
-          title: 'Скоро начало практики',
-          body: `Через 7 минут начнется практика: ${practiceName}`,
-          data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
-        },
-        soonTime,
-        true,
-      );
-    }
-    // If completed and slot passed — skip (already done for today)
+    // Same for the 7 minutes warning
+    const soonTime = subtractMinutesFromTime(slot.time, 7);
+    await notificationService.scheduleAtTime(
+      {
+        type: NotificationType.PracticeSoon,
+        title: 'Скоро начало практики',
+        body: `Через 7 минут начнется практика: ${practiceName}`,
+        data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
+      },
+      soonTime,
+      !isCompleted,
+    );
   }
 }
 

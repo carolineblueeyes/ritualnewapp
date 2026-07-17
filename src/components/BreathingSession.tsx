@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Play, Pause, ChevronRight, Check, Award, Flame } from 'lucide-react';
 import { Practice } from '../types';
-import AnimatedTimer from './AnimatedTimer';
 
 interface BreathingSessionProps {
   practice: Practice;
@@ -132,7 +131,11 @@ export default function BreathingSession({ practice, onClose, onComplete }: Brea
     }
   };
 
-  // formatTime removed — replaced by AnimatedTimer component
+  const formatTime = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
 
   return (
     <AnimatePresence>
@@ -240,7 +243,7 @@ export default function BreathingSession({ practice, onClose, onComplete }: Brea
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-center text-xs font-mono text-white/40">
                   <span>прогресс сессии</span>
-                  <span className="text-white/70 font-semibold"><AnimatedTimer totalSeconds={timeLeft} /></span>
+                  <span className="text-white/70 font-semibold">{formatTime(timeLeft)}</span>
                 </div>
                 <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
                   <motion.div 

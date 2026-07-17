@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Practice } from '../../types';
 import { StandalonePractice } from '../../data/practices/types';
 import { STANDALONE_GROUP_COLORS } from '../../data/practices';
-import AnimatedTimer from '../AnimatedTimer';
 
 interface CompletionScreenProps {
   practice: Practice;
@@ -14,6 +13,12 @@ interface CompletionScreenProps {
   afterHeartRate?: number | null;
   isHealthConnected: boolean;
   onGoHome: () => void;
+}
+
+function formatTime(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
 export default function CompletionScreen({
@@ -107,7 +112,7 @@ export default function CompletionScreen({
         <div className="flex items-center justify-center gap-10 py-3 border-t border-b border-white/[0.04] w-full max-w-[260px]">
           <div className="flex flex-col items-center">
             <span className="text-[9px] text-white/35 uppercase tracking-widest font-mono">Время</span>
-            <span className="text-xl font-extralight font-mono text-white/90 mt-1"><AnimatedTimer totalSeconds={elapsed} /></span>
+            <span className="text-xl font-extralight font-mono text-white/90 mt-1">{formatTime(elapsed)}</span>
           </div>
           <div className="w-[1px] h-8 bg-white/[0.05]" />
           {breathCount > 0 ? (

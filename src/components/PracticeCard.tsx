@@ -7,6 +7,8 @@ interface PracticeCardProps {
   practice: Practice;
   onClick: () => void;
   index?: number;
+  isFavProp?: boolean;
+  onToggleFav?: (practiceId: string) => void;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -18,8 +20,8 @@ const CATEGORY_ICONS: Record<string, string> = {
   'Сон': '🌙',
 };
 
-export default function PracticeCard({ practice, onClick, index = 0 }: PracticeCardProps) {
-  const [isFav, setIsFav] = useState(() => {
+export default function PracticeCard({ practice, onClick, index = 0, isFavProp, onToggleFav }: PracticeCardProps) {
+  const [isFavLocal, setIsFavLocal] = useState(() => {
     try {
       const favs = localStorage.getItem('ritual_favorite_practices_list');
       if (favs) {
@@ -29,20 +31,26 @@ export default function PracticeCard({ practice, onClick, index = 0 }: PracticeC
     return false;
   });
 
+  const isFav = isFavProp !== undefined ? isFavProp : isFavLocal;
+
   const toggleFav = (e: React.MouseEvent) => {
     e.stopPropagation();
-    try {
-      const favsStr = localStorage.getItem('ritual_favorite_practices_list');
-      let favs = favsStr ? JSON.parse(favsStr) : [];
-      if (favs.includes(practice.id)) {
-        favs = favs.filter((id: string) => id !== practice.id);
-        setIsFav(false);
-      } else {
-        favs.push(practice.id);
-        setIsFav(true);
-      }
-      localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(favs));
-    } catch {}
+    if (onToggleFav) {
+      onToggleFav(practice.id);
+    } else {
+      try {
+        const favsStr = localStorage.getItem('ritual_favorite_practices_list');
+        let favs = favsStr ? JSON.parse(favsStr) : [];
+        if (favs.includes(practice.id)) {
+          favs = favs.filter((id: string) => id !== practice.id);
+          setIsFavLocal(false);
+        } else {
+          favs.push(practice.id);
+          setIsFavLocal(true);
+        }
+        localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(favs));
+      } catch {}
+    }
   };
 
   return (

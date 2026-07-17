@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wind, Activity, Compass, Volume2 } from 'lucide-react';
+import { Wind, Activity, Compass, Volume2, Heart } from 'lucide-react';
 import { Practice } from '../types';
 import { standaloneData, StandalonePractice, STANDALONE_GROUP_COLORS, STANDALONE_GROUP_TITLES, ChapterId } from '../data/practices';
 import PracticePlayer from './PracticePlayer';
@@ -13,7 +13,7 @@ interface PracticesListProps {
   onSelectTool: (toolId: 'breathing' | 'activity' | 'focus' | 'atmosphere') => void;
 }
 
-type FilterMood = 'istok' | 'tishina' | 'energiya' | 'yasnost';
+type FilterMood = 'all' | 'favorites' | 'istok' | 'tishina' | 'energiya' | 'yasnost';
 
 const STANDALONE_GROUPS: ChapterId[] = ['istok', 'tishina', 'energiya', 'yasnost'];
 
@@ -59,7 +59,32 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
   const [activeFilter, setActiveFilter] = useState<FilterMood>('istok');
   const [activeStandalone, setActiveStandalone] = useState<StandalonePractice | null>(null);
 
-  const filters: { label: string; value: FilterMood }[] = [
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
+    try {
+      const favs = localStorage.getItem('ritual_favorite_practices_list');
+      return favs ? JSON.parse(favs) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleToggleFavorite = (practiceId: string) => {
+    try {
+      const favsStr = localStorage.getItem('ritual_favorite_practices_list');
+      let favs = favsStr ? JSON.parse(favsStr) : [];
+      if (favs.includes(practiceId)) {
+        favs = favs.filter((id: string) => id !== practiceId);
+      } else {
+        favs.push(practiceId);
+      }
+      localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(favs));
+      setFavoriteIds(favs);
+    } catch {}
+  };
+
+  const filters: { label: React.ReactNode; value: FilterMood }[] = [
+    { label: 'Все', value: 'all' },
+    { label: <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500 inline-block" />, value: 'favorites' },
     { label: 'Исток', value: 'istok' },
     { label: 'Тишина', value: 'tishina' },
     { label: 'Энергия', value: 'energiya' },
@@ -76,7 +101,11 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
     'Фокус': 'yasnost',
   };
 
-  const filteredPractices = practices.filter(p => MOOD_MAPPING[p.mood] === activeFilter);
+  const filteredPractices = practices.filter(p => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'favorites') return favoriteIds.includes(p.id);
+    return MOOD_MAPPING[p.mood] === activeFilter;
+  });
 
   return (
     <div className="w-full max-w-md mx-auto flex flex-col gap-5 select-none pb-24">
@@ -142,12 +171,19 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
 
       {/* Practice cards */}
       <div className="flex flex-col gap-2">
+        {filteredPractices.length > 0 && (
+          <span className="text-[11px] text-white/55 uppercase px-1 tracking-[0.15em] font-semibold mb-1 block">
+            {activeFilter === 'all' ? 'Все базовые практики' : activeFilter === 'favorites' ? 'Избранные практики' : 'Базовые практики'}
+          </span>
+        )}
         {filteredPractices.map((practice, index) => (
           <div key={practice.id}>
             <PracticeCard
               practice={practice}
               onClick={() => onSelectPractice(practice)}
               index={index}
+              isFavProp={favoriteIds.includes(practice.id)}
+              onToggleFav={handleToggleFavorite}
             />
           </div>
         ))}
@@ -155,12 +191,27 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
 
       {/* STANDALONE PRACTICES SECTION */}
       {(() => {
-        const items = standaloneData[activeFilter] || [];
-        const color = STANDALONE_GROUP_COLORS[activeFilter] || '#ffffff';
+        let items: StandalonePractice[] = [];
+        let sectionTitle = '';
+        
+        if (activeFilter === 'all') {
+          items = STANDALONE_GROUPS.flatMap(groupId => standaloneData[groupId] || []);
+          sectionTitle = 'Все медитации';
+        } else if (activeFilter === 'favorites') {
+          const allStandalone = STANDALONE_GROUPS.flatMap(groupId => standaloneData[groupId] || []);
+          items = allStandalone.filter(p => favoriteIds.includes(p.id));
+          sectionTitle = 'Избранные медитации';
+        } else {
+          items = standaloneData[activeFilter] || [];
+          sectionTitle = `Медитации Группы «${STANDALONE_GROUP_TITLES[activeFilter]}»`;
+        }
+
+        if (items.length === 0) return null;
+
         return (
           <div className="flex flex-col gap-3 mt-1">
             <span className="text-[11px] text-white/55 uppercase px-1 tracking-[0.15em] font-semibold">
-              Медитации Группы «{STANDALONE_GROUP_TITLES[activeFilter]}»
+              {sectionTitle}
             </span>
             <div className="flex flex-col gap-1.5">
               {items.map((practice, idx) => (
@@ -169,6 +220,8 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
                     practice={practice}
                     onClick={() => setActiveStandalone(practice)}
                     index={idx}
+                    isFavProp={favoriteIds.includes(practice.id)}
+                    onToggleFav={handleToggleFavorite}
                   />
                 </div>
               ))}
@@ -176,6 +229,30 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
           </div>
         );
       })()}
+
+      {/* Empty state for Favorites */}
+      {activeFilter === 'favorites' && filteredPractices.length === 0 && (
+        (() => {
+          const allStandalone = STANDALONE_GROUPS.flatMap(groupId => standaloneData[groupId] || []);
+          const favoriteStandalone = allStandalone.filter(p => favoriteIds.includes(p.id));
+          if (favoriteStandalone.length === 0) {
+            return (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="rounded-2xl p-6 border border-white/[0.04] bg-white/[0.01] text-center flex flex-col items-center gap-3 py-10"
+              >
+                <Heart className="w-8 h-8 text-white/10" strokeWidth={1.5} />
+                <h4 className="text-sm font-semibold text-white/70">Избранное пусто</h4>
+                <p className="text-[11px] text-white/40 leading-relaxed max-w-[240px]">
+                  Нажмите на сердечко <Heart className="w-3 h-3 inline fill-white/15 text-white/30" /> у любой практики или медитации, чтобы добавить её сюда.
+                </p>
+              </motion.div>
+            );
+          }
+          return null;
+        })()
+      )}
 
       {/* Insight Section */}
       <motion.div

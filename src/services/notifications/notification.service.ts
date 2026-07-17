@@ -1,21 +1,24 @@
 import { NotificationPayload, STORAGE_KEYS } from './notification.types';
-import Dnd from '../../plugins/dnd';
 
 let initialized = false;
 let PushNotifications: any = null;
 let LocalNotifications: any = null;
 let pluginsLoaded = false;
-let dndActive = false;
-let dndSavedNotifications: any[] = [];
-let nativeDndAvailable = false;
 
 async function loadPlugins(): Promise<boolean> {
   if (pluginsLoaded) return !!LocalNotifications;
   try {
     const localMod = await import('@capacitor/local-notifications');
     LocalNotifications = localMod.LocalNotifications;
-    // We intentionally do not use @capacitor/push-notifications to avoid crashes on Android due to missing FCM google-services.json
-    PushNotifications = null;
+    
+    try {
+      const pushMod = await import('@capacitor/push-notifications');
+      PushNotifications = pushMod.PushNotifications;
+    } catch (e) {
+      console.warn('[NotificationService] PushNotifications module is not available on this platform:', e);
+      PushNotifications = null;
+    }
+    
     pluginsLoaded = true;
     return true;
   } catch (e) {
@@ -35,6 +38,10 @@ function isNative(): boolean {
 
 function isNotificationsEnabled(): boolean {
   try {
+    const quietMode = localStorage.getItem('ritual_quiet_mode_active');
+    if (quietMode === 'true') {
+      return false;
+    }
     const val = localStorage.getItem(STORAGE_KEYS.enabled);
     return val === null ? true : val === 'true';
   } catch {
@@ -46,17 +53,48 @@ async function requestPermission(): Promise<boolean> {
   if (!isNative()) return false;
   try {
     await loadPlugins();
-    if (!LocalNotifications) return false;
-    const result = await LocalNotifications.requestPermissions();
-    return result.display === 'granted';
+    let localGranted = false;
+    let pushGranted = false;
+    
+    if (LocalNotifications) {
+      const result = await LocalNotifications.requestPermissions();
+      localGranted = result.display === 'granted';
+    }
+    
+    if (PushNotifications) {
+      try {
+        const result = await PushNotifications.requestPermissions();
+        pushGranted = result.receive === 'granted';
+      } catch (e) {
+        console.warn('[NotificationService] Push requestPermissions failed:', e);
+      }
+    }
+    
+    return localGranted || pushGranted;
   } catch {
     return false;
   }
 }
 
 async function registerForPush(): Promise<void> {
-  // Disabled to prevent native crash on Android when google-services.json is missing.
-  return;
+  if (!isNative()) return;
+  try {
+    await loadPlugins();
+    if (!PushNotifications) return;
+
+    let permStatus = await PushNotifications.checkPermissions();
+    if (permStatus.receive === 'prompt') {
+      permStatus = await PushNotifications.requestPermissions();
+    }
+
+    if (permStatus.receive === 'granted') {
+      await PushNotifications.register();
+    } else {
+      console.warn('[NotificationService] Push permissions not granted');
+    }
+  } catch (err) {
+    console.error('[NotificationService] Failed to register push notifications:', err);
+  }
 }
 
 function addListeners(
@@ -64,14 +102,40 @@ function addListeners(
   onNotificationOpened?: (data: Record<string, unknown>) => void,
 ): void {
   if (!isNative() || initialized) return;
-  if (!LocalNotifications) return;
   initialized = true;
 
   try {
     if (LocalNotifications) {
       LocalNotifications.addListener('localNotificationActionPerformed', (action: any) => {
         console.log('[NotificationService] Local opened:', action?.notification);
-        onNotificationOpened?.(action?.notification?.data ?? {});
+        const data = action?.notification?.extra || action?.notification?.data || {};
+        onNotificationOpened?.(data);
+      });
+    }
+
+    if (PushNotifications) {
+      PushNotifications.addListener('registration', (token: any) => {
+        console.log('[NotificationService] Push registration successful, token:', token.value);
+        localStorage.setItem('ritual_push_token', token.value);
+      });
+
+      PushNotifications.addListener('registrationError', (error: any) => {
+        console.error('[NotificationService] Push registration error:', error.error);
+      });
+
+      PushNotifications.addListener('pushNotificationReceived', (notification: any) => {
+        console.log('[NotificationService] Push received:', notification);
+        const quietMode = localStorage.getItem('ritual_quiet_mode_active');
+        if (quietMode === 'true') {
+          console.log('[NotificationService] Suppressing push notification since quiet mode is active');
+          return;
+        }
+        onNotificationReceived?.(notification.data ?? {});
+      });
+
+      PushNotifications.addListener('pushNotificationActionPerformed', (action: any) => {
+        console.log('[NotificationService] Push action performed:', action);
+        onNotificationOpened?.(action.notification?.data ?? {});
       });
     }
   } catch (e) {
@@ -96,7 +160,6 @@ async function cancelAll(): Promise<void> {
 }
 
 async function scheduleLocal(payload: NotificationPayload, delaySeconds: number): Promise<number | null> {
-  if (dndActive) return null;
   if (!isNotificationsEnabled()) return null;
   if (!isNative()) return null;
 
@@ -172,7 +235,6 @@ async function scheduleAtTime(
   timeHHMM: string,
   repeats: boolean = false
 ): Promise<number | null> {
-  if (dndActive) return null;
   if (!isNotificationsEnabled()) return null;
   if (!isNative()) return null;
 
@@ -207,18 +269,18 @@ async function scheduleAtTime(
       exact: true,
     };
 
-    // Always compute the first occurrence time so Android knows when to fire
-    const now = new Date();
-    const firstTarget = new Date();
-    firstTarget.setHours(hours, minutes, 0, 0);
-    if (firstTarget <= now) {
-      firstTarget.setDate(firstTarget.getDate() + 1);
-    }
-    scheduleOpts.at = firstTarget;
-
     if (repeats) {
       scheduleOpts.on = { hour: hours, minute: minutes };
       scheduleOpts.repeats = true;
+      scheduleOpts.every = 'day';
+    } else {
+      const now = new Date();
+      const target = new Date();
+      target.setHours(hours, minutes, 0, 0);
+      if (target <= now) {
+        target.setDate(target.getDate() + 1);
+      }
+      scheduleOpts.at = target;
     }
 
     try {
@@ -271,78 +333,9 @@ async function cancelById(id: number): Promise<void> {
   } catch {}
 }
 
-async function enterDND(): Promise<void> {
-  if (dndActive) return;
-  dndActive = true;
-  try {
-    await loadPlugins();
-    if (!LocalNotifications) return;
-    const pending = await LocalNotifications.getPending();
-    if (pending.notifications.length > 0) {
-      dndSavedNotifications = pending.notifications.map((n: any) => ({ ...n }));
-      await LocalNotifications.cancel({
-        notifications: pending.notifications.map((n: any) => ({ id: n.id })),
-      });
-    }
-  } catch (e) {
-    console.warn('[NotificationService] enterDND failed:', e);
-  }
-  // Enable native system DND to block notifications from ALL apps
-  if (isNative()) {
-    try {
-      const perm = await Dnd.checkPermission();
-      if (!perm.granted) {
-        await Dnd.requestPermission();
-      }
-      const { granted } = await Dnd.checkPermission();
-      if (granted) {
-        await Dnd.enter();
-        nativeDndAvailable = true;
-      }
-    } catch (e) {
-      console.warn('[NotificationService] Native DND failed:', e);
-    }
-  }
-}
-
-async function exitDND(): Promise<void> {
-  if (!dndActive) return;
-  dndActive = false;
-  dndSavedNotifications = [];
-  // Disable native system DND
-  if (isNative() && nativeDndAvailable) {
-    try {
-      await Dnd.exit();
-    } catch (e) {
-      console.warn('[NotificationService] Native DND exit failed:', e);
-    }
-    nativeDndAvailable = false;
-  }
-}
-
-function isDNDActive(): boolean {
-  return dndActive;
-}
-
 async function rescheduleAll(): Promise<void> {
   if (!isNotificationsEnabled()) return;
   await cancelAll();
-  // Ensure channel exists before new notifications are scheduled
-  if (isNative()) {
-    try {
-      await loadPlugins();
-      if (LocalNotifications) {
-        await LocalNotifications.createChannel({
-          id: 'ritual-reminders',
-          name: 'Напоминания Ritual',
-          description: 'Уведомления о практиках и напоминаниях серии дней',
-          importance: 4,
-          visibility: 1,
-          vibration: true,
-        });
-      }
-    } catch {}
-  }
 }
 
 async function init(
@@ -379,9 +372,6 @@ export const notificationService = {
   scheduleAtTime,
   cancelById,
   rescheduleAll,
-  enterDND,
-  exitDND,
-  isDNDActive,
   isNative,
   isNotificationsEnabled,
 };

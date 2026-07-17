@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Play, Pause, Clock, AlertTriangle, Volume2, Shield, BarChart2, EyeOff, X, Sparkles, Share2 } from 'lucide-react';
+import { scheduleFocusBreak, rescheduleAll } from '../services/notifications';
 import { notificationService } from '../services/notifications';
-import Dnd from '../plugins/dnd';
 import { audioEngine } from '../services/audioEngine';
-import AnimatedTimer from './AnimatedTimer';
 
 interface FocusToolProps {
   onClose: () => void;
   color?: string;
+  onAddMinutes?: (mins: number, practiceId: string, title: string) => void;
 }
 
 interface FocusSessionRecord {
@@ -21,7 +21,7 @@ interface FocusSessionRecord {
   date: string;
 }
 
-export default function FocusTool({ onClose, color = '#60a5fa' }: FocusToolProps) {
+export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: FocusToolProps) {
   // Config state
   const [workTime, setWorkTime] = useState(25); // minutes
   const [breakTime, setBreakTime] = useState(5); // minutes
@@ -43,6 +43,8 @@ export default function FocusTool({ onClose, color = '#60a5fa' }: FocusToolProps
   const [totalWorkSeconds, setTotalWorkSeconds] = useState(0);
   const [distractionsCount, setDistractionsCount] = useState(0);
   const [showSummary, setShowSummary] = useState(false);
+  const [focusNotificationId, setFocusNotificationId] = useState<number | null>(null);
+
   // Cheat detection state
   const [cheated, setCheated] = useState(false);
   const [showCheatAlert, setShowCheatAlert] = useState(false);
@@ -102,10 +104,14 @@ export default function FocusTool({ onClose, color = '#60a5fa' }: FocusToolProps
     audioEngine.setMuted(!isSoundOn);
   }, [isSoundOn]);
 
-  // Stop audio on unmount
+  // Stop audio and clean up quiet mode on unmount
   useEffect(() => {
     return () => {
       audioEngine.stopAll();
+      if (localStorage.getItem('ritual_quiet_mode_active') === 'true') {
+        localStorage.removeItem('ritual_quiet_mode_active');
+        rescheduleAll().catch(e => console.warn('[FocusTool] Failed to reschedule on unmount:', e));
+      }
     };
   }, []);
 
@@ -165,7 +171,14 @@ export default function FocusTool({ onClose, color = '#60a5fa' }: FocusToolProps
     setShowSummary(false);
 
     if (blockNotifications) {
-      notificationService.enterDND();
+      // Quiet mode ON: Cancel absolutely all notifications and set active flag
+      localStorage.setItem('ritual_quiet_mode_active', 'true');
+      notificationService.cancelAll();
+    } else {
+      // Quiet mode OFF: schedule the focus break notification normally
+      scheduleFocusBreak(workTime).then(id => {
+        if (id) setFocusNotificationId(id);
+      });
     }
   };
 
@@ -175,16 +188,29 @@ export default function FocusTool({ onClose, color = '#60a5fa' }: FocusToolProps
     audioEngine.stopAll();
     audioEngine.playFinalChime();
 
-    if (blockNotifications) {
-      notificationService.exitDND();
+    if (focusNotificationId) {
+      notificationService.cancelById(focusNotificationId);
+      setFocusNotificationId(null);
+    }
+
+    if (localStorage.getItem('ritual_quiet_mode_active') === 'true') {
+      localStorage.removeItem('ritual_quiet_mode_active');
+      // Restore all standard reminders after the session completes
+      rescheduleAll().catch(e => console.warn('[FocusTool] Failed to reschedule:', e));
     }
 
     // Compute metrics and write session to history
     const purePercentValue = calculatePurePercent(totalWorkSeconds, distractionsCount, cheated);
+    const elapsedMinutes = Math.ceil(totalWorkSeconds / 60);
+
+    if (elapsedMinutes > 0 && onAddMinutes) {
+      onAddMinutes(elapsedMinutes, 'focus', taskName.trim() || 'Глубокий фокус');
+    }
+
     const newRecord: FocusSessionRecord = {
       id: `session_${Date.now()}`,
       task: taskName.trim() || 'Глубокий фокус',
-      duration: Math.ceil(totalWorkSeconds / 60),
+      duration: elapsedMinutes,
       distractions: distractionsCount,
       purePercent: purePercentValue,
       cheated,
@@ -227,7 +253,11 @@ export default function FocusTool({ onClose, color = '#60a5fa' }: FocusToolProps
     setDistractionsCount(prev => prev + 1);
   };
 
-  // formatTime removed — replaced by AnimatedTimer component
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
 
   const getProgressPercentage = () => {
     const total = (isBreak ? breakTime : workTime) * 60;
@@ -384,19 +414,7 @@ export default function FocusTool({ onClose, color = '#60a5fa' }: FocusToolProps
                 <div className="p-4 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col justify-between">
                   <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider block mb-1">ТИХИЙ РЕЖИМ</span>
                   <button
-                    onClick={async () => {
-                      triggerHaptic('light');
-                      if (!blockNotifications) {
-                        // Enabling DND — check/request permission first
-                        try {
-                          const { granted } = await Dnd.checkPermission();
-                          if (!granted) {
-                            await Dnd.requestPermission();
-                          }
-                        } catch {}
-                      }
-                      setBlockNotifications(!blockNotifications);
-                    }}
+                    onClick={() => { triggerHaptic('light'); setBlockNotifications(!blockNotifications); }}
                     className={`flex items-center justify-between py-1.5 px-3 rounded-xl border transition-all mt-1 ${
                       blockNotifications 
                         ? 'bg-amber-300/10 border-amber-300/30 text-amber-300' 
@@ -530,7 +548,7 @@ export default function FocusTool({ onClose, color = '#60a5fa' }: FocusToolProps
                     {isBreak ? 'ВРЕМЯ ОТДЫХА' : 'ВРЕМЯ РАБОТЫ'}
                   </span>
                   <h1 className="text-5xl font-light font-mono text-white tracking-tight leading-none mb-1">
-                    <AnimatedTimer totalSeconds={secondsLeft} />
+                    {formatTime(secondsLeft)}
                   </h1>
                   <span className="text-[9px] font-mono text-white/30">осталось в цикле</span>
                 </div>

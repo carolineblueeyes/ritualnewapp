@@ -8,15 +8,19 @@ interface StandalonePracticeCardProps {
   practice: StandalonePractice;
   onClick: () => void;
   index?: number;
+  isFavProp?: boolean;
+  onToggleFav?: (practiceId: string) => void;
 }
 
 export default function StandalonePracticeCard({
   practice,
   onClick,
   index = 0,
+  isFavProp,
+  onToggleFav,
 }: StandalonePracticeCardProps) {
   const color = STANDALONE_GROUP_COLORS[practice.groupId];
-  const [isFav, setIsFav] = useState(() => {
+  const [isFavLocal, setIsFavLocal] = useState(() => {
     try {
       const favs = localStorage.getItem('ritual_favorite_practices_list');
       if (favs) {
@@ -26,20 +30,26 @@ export default function StandalonePracticeCard({
     return false;
   });
 
+  const isFav = isFavProp !== undefined ? isFavProp : isFavLocal;
+
   const toggleFav = (e: React.MouseEvent) => {
     e.stopPropagation();
-    try {
-      const favsStr = localStorage.getItem('ritual_favorite_practices_list');
-      let favs = favsStr ? JSON.parse(favsStr) : [];
-      if (favs.includes(practice.id)) {
-        favs = favs.filter((id: string) => id !== practice.id);
-        setIsFav(false);
-      } else {
-        favs.push(practice.id);
-        setIsFav(true);
-      }
-      localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(favs));
-    } catch {}
+    if (onToggleFav) {
+      onToggleFav(practice.id);
+    } else {
+      try {
+        const favsStr = localStorage.getItem('ritual_favorite_practices_list');
+        let favs = favsStr ? JSON.parse(favsStr) : [];
+        if (favs.includes(practice.id)) {
+          favs = favs.filter((id: string) => id !== practice.id);
+          setIsFavLocal(false);
+        } else {
+          favs.push(practice.id);
+          setIsFavLocal(true);
+        }
+        localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(favs));
+      } catch {}
+    }
   };
 
   const formatDuration = (seconds: number) => {

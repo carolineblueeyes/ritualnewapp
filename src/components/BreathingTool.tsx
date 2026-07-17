@@ -3,11 +3,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Play, Pause, ChevronLeft, Volume2, HelpCircle, Plus, Trash } from 'lucide-react';
 import { scheduleSessionComplete } from '../services/notifications';
 import { audioEngine } from '../services/audioEngine';
-import AnimatedTimer from './AnimatedTimer';
 
 interface BreathingToolProps {
   onClose: () => void;
   color?: string;
+  onAddMinutes?: (mins: number, practiceId: string, title: string) => void;
 }
 
 interface BreathPreset {
@@ -54,7 +54,7 @@ const AUDIO_MAP: Record<string, string> = {
   deepsleep: 'sleep_prep'
 };
 
-export default function BreathingTool({ onClose, color = '#ffd585' }: BreathingToolProps) {
+export default function BreathingTool({ onClose, color = '#ffd585', onAddMinutes }: BreathingToolProps) {
   const [presets, setPresets] = useState<BreathPreset[]>(() => {
     const saved = localStorage.getItem('ritual_custom_presets');
     return saved ? [...DEFAULT_PRESETS, ...JSON.parse(saved)] : DEFAULT_PRESETS;
@@ -164,6 +164,9 @@ export default function BreathingTool({ onClose, color = '#ffd585' }: BreathingT
           audioEngine.playFinalChime();
           setIsPlaying(false);
           triggerHaptic('heavy');
+          if (onAddMinutes) {
+            onAddMinutes(5, 'breathing', `Ритм: ${selectedPreset.title}`);
+          }
           return 0;
         }
         return prev - 0.1;
@@ -289,6 +292,9 @@ export default function BreathingTool({ onClose, color = '#ffd585' }: BreathingT
     const elapsed = Math.floor((300 - timeLeft) / 60);
     if (elapsed > 0) {
       scheduleSessionComplete('breathing', elapsed);
+      if (onAddMinutes) {
+        onAddMinutes(elapsed, 'breathing', `Ритм: ${selectedPreset.title}`);
+      }
     }
   };
 
@@ -347,7 +353,11 @@ export default function BreathingTool({ onClose, color = '#ffd585' }: BreathingT
     return 1.0; // holdEmpty
   };
 
-  // formatTime removed — replaced by AnimatedTimer component
+  const formatTime = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const secs = Math.floor(sec % 60);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
 
   // Beautiful background colors corresponding to the exact design specifications
   // "теплеет (золотистый) при синхронизации дыхания с целевым ритмом, холодеет (синий) при расхождении..."
@@ -607,7 +617,7 @@ export default function BreathingTool({ onClose, color = '#ffd585' }: BreathingT
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   Когерентность: {coherence}%
                 </span>
-                <span><AnimatedTimer totalSeconds={timeLeft} /></span>
+                <span>{formatTime(timeLeft)}</span>
               </div>
 
               <div className="flex items-center gap-3">

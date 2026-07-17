@@ -7,7 +7,6 @@ import { STANDALONE_GROUP_COLORS } from '../data/practices';
 import PracticeCrystal from './PracticeCrystal';
 import PracticeInteractive from './PracticeInteractive';
 import BreathingPlayer from './players/BreathingPlayer';
-import AnimatedTimer from './AnimatedTimer';
 import FocusPlayer from './players/FocusPlayer';
 import MovementPlayer from './players/MovementPlayer';
 import AmbientPlayer from './players/AmbientPlayer';
@@ -37,7 +36,11 @@ const PHASE_SUBTITLES: Record<BreathPhase, string> = {
   holdEmpty: 'Ощутите абсолютную тишину',
 };
 
-// formatTime removed — replaced by AnimatedTimer component
+function formatTime(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
 
 function getDailySteps(practiceId: string): PracticeStep[] {
   switch (practiceId) {
@@ -961,10 +964,10 @@ export default function PracticePlayer({
           </div>
           <div className="flex justify-between items-center mt-2 px-0.5">
             <span className="text-[10px] font-mono text-white/30 tracking-wider">
-              <AnimatedTimer totalSeconds={elapsed} />
+              {formatTime(elapsed)}
             </span>
             <span className="text-[10px] font-mono text-white/30 tracking-wider">
-              <AnimatedTimer totalSeconds={totalDuration} />
+              {formatTime(totalDuration)}
             </span>
           </div>
         </div>

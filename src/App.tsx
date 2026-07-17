@@ -10,6 +10,7 @@ import Onboarding from './components/Onboarding';
 import SubscriptionModal from './components/SubscriptionModal';
 import PracticePlayer from './components/PracticePlayer';
 import { useHealthData } from './hooks/useHealthData';
+import { updateMetricsAfterPractice } from './services/health/manager';
 import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { notificationService, rescheduleAll, scheduleSocialInvite, scheduleSubscriptionWarning } from './services/notifications';
@@ -234,7 +235,38 @@ export default function App() {
 
   // Initialize notifications on app start
   useEffect(() => {
-    notificationService.init();
+    notificationService.init(
+      (data) => {
+        console.log('[App] Notification received in foreground:', data);
+      },
+      (data) => {
+        console.log('[App] Notification opened with data:', data);
+        const practiceId = data?.practiceId as string | undefined;
+        const screen = data?.screen as string | undefined;
+        
+        if (practiceId) {
+          try {
+            const savedPractices = JSON.parse(localStorage.getItem('ritual_practices') || '[]');
+            const found = savedPractices.find((p: any) => p.id === practiceId);
+            if (found) {
+              setSelectedPractice(found);
+            }
+          } catch (e) {
+            console.warn('[App] Failed to find practice for notification:', e);
+          }
+        } else if (screen === 'FocusTool') {
+          setActiveTool('focus');
+        } else if (screen === 'BreathingTool') {
+          setActiveTool('breathing');
+        } else if (screen === 'AtmosphereTool') {
+          setActiveTool('atmosphere');
+        } else if (screen === 'Dashboard') {
+          setActiveTab('today');
+        } else if (screen === 'Profile') {
+          setActiveTab('profile');
+        }
+      }
+    );
     if (notificationService.isNotificationsEnabled()) {
       rescheduleAll();
     }
@@ -322,6 +354,11 @@ export default function App() {
     const now = new Date();
     const timeStr = `Сегодня, ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     
+    // Update persistent health metrics based on practice
+    updateMetricsAfterPractice(practiceId, mins);
+    // Refresh health data hook to update shine score and metrics immediately
+    refreshHealth();
+
     setStats((prev) => {
       const newShineScore = Math.min(100, prev.shineScore + 6);
       return {
@@ -391,10 +428,10 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#070709] text-white flex flex-col justify-between overflow-x-hidden font-sans">
+    <div className="relative min-h-screen bg-black text-white flex flex-col justify-between overflow-x-hidden font-sans">
       
       {/* Subtle background */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[#070709]" />
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-black" />
 
       {/* Top header */}
       <header className="relative z-10 w-full max-w-md mx-auto pt-[calc(env(safe-area-inset-top)+1.5rem)] px-6 flex justify-between items-center">
@@ -548,13 +585,19 @@ export default function App() {
       {/* Tools overlays */}
       <AnimatePresence>
         {activeTool === 'breathing' && (
-          <BreathingTool onClose={() => setActiveTool(null)} />
+          <BreathingTool 
+            onClose={() => setActiveTool(null)} 
+            onAddMinutes={addPracticeMinutes}
+          />
         )}
         {activeTool === 'activity' && (
           <ActivityTool onClose={() => setActiveTool(null)} />
         )}
         {activeTool === 'focus' && (
-          <FocusTool onClose={() => setActiveTool(null)} />
+          <FocusTool 
+            onClose={() => setActiveTool(null)} 
+            onAddMinutes={addPracticeMinutes}
+          />
         )}
         {activeTool === 'atmosphere' && (
           <AtmosphereTool onClose={() => setActiveTool(null)} />

@@ -19,8 +19,6 @@ interface UseHealthDataReturn {
   connectRing: (address: string) => Promise<boolean>;
   disconnectRing: () => Promise<void>;
   scanRings: () => Promise<{ name: string; address: string; rssi: number }[]>;
-  isDemoMode: boolean;
-  setDemoMode: (val: boolean) => void;
 }
 
 function getPracticesCompleted(): number {
@@ -38,13 +36,6 @@ export function useHealthData(): UseHealthDataReturn {
   const [hasRing, setHasRing] = useState(false);
   const [hasHealthApp, setHasHealthApp] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const [isDemoMode, setIsDemoModeState] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('ritual_use_demo_metrics') !== 'false';
-    }
-    return true;
-  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,22 +67,6 @@ export function useHealthData(): UseHealthDataReturn {
   const refresh = useCallback(async () => {
     clearHealthCache();
     await load();
-  }, [load]);
-
-  const setDemoMode = useCallback((val: boolean) => {
-    if (typeof window !== 'undefined') {
-      if (val) {
-        localStorage.setItem('ritual_use_demo_metrics', 'true');
-      } else {
-        localStorage.setItem('ritual_use_demo_metrics', 'false');
-      }
-    }
-    setIsDemoModeState(val);
-    clearHealthCache();
-    // Use setTimeout to allow state and cache to write
-    setTimeout(() => {
-      load();
-    }, 50);
   }, [load]);
 
   const connectHealthApp = useCallback(async (): Promise<boolean> => {
@@ -151,7 +126,5 @@ export function useHealthData(): UseHealthDataReturn {
     connectRing,
     disconnectRing,
     scanRings,
-    isDemoMode,
-    setDemoMode,
   };
 }

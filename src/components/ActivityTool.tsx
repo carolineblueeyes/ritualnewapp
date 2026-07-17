@@ -6,7 +6,6 @@ import {
   MoreHorizontal, Compass, User, Calendar, Map, Check, ArrowRight, TrendingUp 
 } from 'lucide-react';
 import ActivityMap from './ActivityMap';
-import AnimatedTimer from './AnimatedTimer';
 import { geolocationService, GeoPoint } from '../services/geolocation';
 
 interface ActivityToolProps {
@@ -171,7 +170,12 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
     }
   };
 
-  // formatTime removed — replaced by AnimatedTimer component
+  const formatTime = (totalSeconds: number) => {
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    return `${hrs > 0 ? hrs + ':' : ''}${mins < 10 && hrs > 0 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
 
   const finalTime = elapsedTime > 5 ? elapsedTime : 765; // fallback 12 mins 45s
   const finalDistance = distance > 0.05 ? distance : (selectedType === 'run' ? 2.14 : selectedType === 'walk' ? 1.45 : selectedType === 'bike' ? 4.82 : 1.12);
@@ -488,7 +492,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                   <span className="text-[9px] font-mono tracking-wider uppercase">Время</span>
                 </div>
                 <span className="text-xl font-normal font-mono text-white">
-                  <AnimatedTimer totalSeconds={elapsedTime} />
+                  {formatTime(elapsedTime)}
                 </span>
               </div>
             </div>
@@ -620,7 +624,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
               <div className="flex flex-col gap-0.5">
                 <span className="text-[9px] font-mono uppercase tracking-wider text-white/40">Время в движении</span>
                 <span className="text-2xl font-bold text-white/95 font-mono">
-                  <AnimatedTimer totalSeconds={finalTime} />
+                  {formatTime(finalTime)}
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">

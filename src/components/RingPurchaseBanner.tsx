@@ -1,7 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ShoppingBag, Smartphone, X, ChevronRight, Sparkles } from 'lucide-react';
-import { useHealthData } from '../hooks/useHealthData';
+import { ShoppingBag, Smartphone, X, ChevronRight } from 'lucide-react';
 
 interface RingPurchaseBannerProps {
   source: 'none' | 'ring' | 'healthapp';
@@ -11,8 +10,6 @@ interface RingPurchaseBannerProps {
 }
 
 export default function RingPurchaseBanner({ source, onConnect, onBuyRing, onDismiss }: RingPurchaseBannerProps) {
-  const { isDemoMode, setDemoMode } = useHealthData();
-
   if (source !== 'none') return null;
 
   return (
@@ -60,14 +57,6 @@ export default function RingPurchaseBanner({ source, onConnect, onBuyRing, onDis
             </button>
           )}
         </div>
-
-        <button
-          onClick={() => setDemoMode(!isDemoMode)}
-          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] font-medium text-purple-300 hover:bg-purple-500/15 transition-all active:scale-98"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
-          {isDemoMode ? 'Выключить демо-показатели' : 'Включить демо-показатели'}
-        </button>
       </div>
     </motion.div>
   );

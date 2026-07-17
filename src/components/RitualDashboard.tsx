@@ -358,7 +358,7 @@ export default function RitualDashboard({ practices, stats, onSelectPractice, sh
       }
       calculatedShine += getStableOffset(dayStr);
       
-      // Force today to always match the exact live shineScore
+      // Force today to always match the exact live shineScore, clamped to 40-100 to prevent layout overlap
       if (i === 0) {
         calculatedShine = Math.max(40, Math.min(100, shineScore || 74));
       } else {
@@ -403,9 +403,7 @@ export default function RitualDashboard({ practices, stats, onSelectPractice, sh
 
   const { 
     metrics: healthMetrics, 
-    connectHealthApp: dashboardConnectHealth,
-    isDemoMode,
-    setDemoMode 
+    connectHealthApp: dashboardConnectHealth
   } = useHealthData();
 
   const [isHealthOpen, setIsHealthOpen] = useState(false);
@@ -943,7 +941,82 @@ export default function RitualDashboard({ practices, stats, onSelectPractice, sh
               </div>
             </section>
 
+            {/* ===== USEFUL READING ===== */}
+            <section className="flex flex-col gap-3">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[11px] text-white/60 tracking-wider font-semibold">Полезное чтение</span>
+                <button 
+                  onClick={() => setCurrentPage(1)} 
+                  className="text-[10px] text-white/40 hover:text-white/70 transition-colors flex items-center gap-0.5 font-semibold cursor-pointer"
+                >
+                  Все статьи <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x snap-mandatory px-1">
+                {ARTICLES.map((art) => {
+                  const isCompleted = completedArticles.includes(art.id);
+                  const artBg: Record<string, string> = {
+                    'movement': 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?q=80&w=400&auto=format&fit=crop',
+                    'attention': 'https://images.unsplash.com/photo-1507413245164-6160d8298b31?q=80&w=400&auto=format&fit=crop',
+                    'sleep': 'https://images.unsplash.com/photo-1511295742364-92767fa62d9f?q=80&w=400&auto=format&fit=crop',
+                    'breathing': 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=400&auto=format&fit=crop',
+                    'cold-water': 'https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?q=80&w=400&auto=format&fit=crop',
+                    'water-drinking': 'https://images.unsplash.com/photo-1523362628745-0c100150b504?q=80&w=400&auto=format&fit=crop',
+                    'digital-detox': 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?q=80&w=400&auto=format&fit=crop',
+                    'posture': 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=400&auto=format&fit=crop'
+                  };
 
+                  const bgUrl = artBg[art.id] || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=400&auto=format&fit=crop';
+
+                  return (
+                    <motion.div
+                      key={art.id}
+                      onClick={() => {
+                        setSelectedArticleId(art.id);
+                        setScrollProgress(0);
+                      }}
+                      className="snap-start flex-shrink-0 w-[200px] h-[130px] relative rounded-2xl cursor-pointer overflow-hidden p-4 flex flex-col justify-between border border-white/[0.04]"
+                      whileHover={{ scale: 1.02, borderColor: 'rgba(255,255,255,0.08)' }}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <div className="absolute inset-0">
+                        <img 
+                          src={bgUrl} 
+                          alt="" 
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d12]/95 via-[#0d0d12]/75 to-[#0d0d12]/40" />
+                      </div>
+
+                      <div className="relative z-10 flex items-center justify-between">
+                        <span className="text-[8px] font-mono font-bold tracking-widest text-amber-300 uppercase bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
+                          {art.category}
+                        </span>
+                        <span className="text-[9px] text-white/40 font-mono flex items-center gap-0.5">
+                          <Clock className="w-2.5 h-2.5" /> {art.readTime}
+                        </span>
+                      </div>
+
+                      <div className="relative z-10 flex flex-col gap-1 text-left">
+                        <h4 className="text-[12px] font-semibold text-white/95 leading-tight line-clamp-2">
+                          {art.title}
+                        </h4>
+                        <div className="flex items-center justify-between gap-1.5">
+                          <p className="text-[10px] text-white/50 truncate flex-1 leading-none">{art.subtitle}</p>
+                          {isCompleted && (
+                            <div className="w-4 h-4 rounded-full bg-[#E6B85C]/20 border border-[#E6B85C]/40 flex items-center justify-center text-[#E6B85C] flex-shrink-0">
+                              <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </section>
           </motion.div>
         )}
 
@@ -1106,13 +1179,6 @@ export default function RitualDashboard({ practices, stats, onSelectPractice, sh
                               Купить кольцо
                             </button>
                           </div>
-                          <button 
-                            onClick={() => setDemoMode(true)} 
-                            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] font-medium text-purple-300 hover:bg-purple-500/15 transition-all active:scale-98"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
-                            Включить демо-показатели
-                          </button>
                         </div>
                       </div>
                     )}
@@ -1288,15 +1354,6 @@ export default function RitualDashboard({ practices, stats, onSelectPractice, sh
                   <motion.div key="metrics" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3">
                     <div className="flex items-center justify-between mb-1">
                       <h4 className="text-sm font-normal text-white/60">Показатели</h4>
-                      {isDemoMode && (
-                        <button 
-                          onClick={() => setDemoMode(false)} 
-                          className="text-[10px] text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-full px-2.5 py-1 transition-all flex items-center gap-1.5 active:scale-95"
-                        >
-                          <Sparkles className="w-3 h-3 text-purple-400 animate-pulse" />
-                          Выйти из Демо-режима
-                        </button>
-                      )}
                     </div>
 
                     {healthSource === 'none' && (
@@ -1316,13 +1373,6 @@ export default function RitualDashboard({ practices, stats, onSelectPractice, sh
                           <button onClick={() => window.open('https://ritual.store', '_blank')} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-amber-400/10 border border-amber-400/20 text-[11px] font-medium text-amber-300 hover:bg-amber-400/15 transition-all">
                             <ShoppingBag className="w-3.5 h-3.5" />
                             Купить кольцо
-                          </button>
-                          <button 
-                            onClick={() => setDemoMode(true)} 
-                            className="col-span-2 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] font-medium text-purple-300 hover:bg-purple-500/15 transition-all active:scale-98"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
-                            Включить демо-показатели
                           </button>
                         </div>
                       </div>
@@ -1633,15 +1683,15 @@ export default function RitualDashboard({ practices, stats, onSelectPractice, sh
 
                   // Coordinates for SVG lines
                   const width = 300;
-                  const height = 128;
+                  const height = 120;
                   const daysCount = activeAnalyticsList.length;
 
                   const points = activeAnalyticsList.map((dVal, i) => {
                     const x = daysCount === 7 
                       ? 20 + i * (260 / 6)
                       : 10 + i * (280 / (daysCount - 1));
-                    // Shine score scale: 40% - 100% mapped to y: 95 - 15
-                    const clampedScore = Math.max(40, dVal.shineScore);
+                    // Shine score scale: 40% - 100% mapped to y: 95 - 15. Clamp dVal.shineScore to prevent going below bottom labels
+                    const clampedScore = Math.max(40, Math.min(100, dVal.shineScore));
                     const y = 95 - ((clampedScore - 40) / 60) * 80;
                     return { x, y, ...dVal, originalIndex: i };
                   });

@@ -48,43 +48,39 @@
 }
 
 :root {
-  /* Design System Colors */
-  --color-surface: #0f0f12;
-  --color-surface-elevated: #18181d;
-  --color-surface-hover: #1f1f25;
-  --color-border: rgba(255, 255, 255, 0.06);
-  --color-border-subtle: rgba(255, 255, 255, 0.03);
-  --color-accent: #e8e0d4;
+  /* Design System Colors - Obsidian Pure Contrast */
+  --color-surface: #0a0a0c;
+  --color-surface-elevated: #111114;
+  --color-surface-hover: #16161c;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.04);
+  --color-accent: #f5f2ed;
   --color-accent-gold: #d4a853;
-  --color-accent-dim: rgba(232, 224, 212, 0.12);
-  --color-text-primary: #f5f2ed;
-  --color-text-secondary: rgba(245, 242, 237, 0.65);
-  --color-text-tertiary: rgba(245, 242, 237, 0.45);
+  --color-accent-dim: rgba(245, 242, 237, 0.1);
+  --color-text-primary: #ffffff;
+  --color-text-secondary: rgba(255, 255, 255, 0.7);
+  --color-text-tertiary: rgba(255, 255, 255, 0.4);
 
-  /* Group Colors */
-  --color-istok: #E6B85C;
-  --color-tishina: #7A9BBA;
-  --color-energiya: #E67E22;
-  --color-yasnost: #A8D5E5;
+  /* Group Colors - Premium Wellness Palettes */
+  --color-istok: #d4a853;       /* Premium Gold */
+  --color-tishina: #63b3ed;     /* Crisp Ice Blue */
+  --color-energiya: #f6ad55;    /* Energizing Warm Amber */
+  --color-yasnost: #9f7aea;     /* Clarity Violet */
 
   /* Glassmorphism */
-  --glass-bg: rgba(255, 255, 255, 0.02);
-  --glass-border: rgba(255, 255, 255, 0.04);
-  --glass-bg-hover: rgba(255, 255, 255, 0.04);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-bg-hover: rgba(255, 255, 255, 0.06);
 }
 
 html, body {
-  background-color: #070709;
+  background-color: #000000;
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -ms-overflow-style: none !important;
   scrollbar-width: none !important;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
 }
 
 html::-webkit-scrollbar, body::-webkit-scrollbar {
@@ -96,12 +92,6 @@ html::-webkit-scrollbar, body::-webkit-scrollbar {
 *, *::before, *::after {
   -ms-overflow-style: none !important;
   scrollbar-width: none !important;
-}
-
-input, textarea, [contenteditable] {
-  -webkit-user-select: text !important;
-  user-select: text !important;
-  -webkit-touch-callout: default !important;
 }
 
 *::-webkit-scrollbar {

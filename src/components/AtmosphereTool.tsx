@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, HelpCircle, Play, Pause, Volume2, Sun, Clock, Heart, Sparkles, X } from 'lucide-react';
 import { scheduleSessionComplete } from '../services/notifications';
 import { audioEngine } from '../services/audioEngine';
-import AnimatedTimer from './AnimatedTimer';
 
 interface AtmosphereToolProps {
   onClose: () => void;
@@ -265,7 +264,11 @@ export default function AtmosphereTool({ onClose, color = '#fb7185' }: Atmospher
     localStorage.setItem('ritual_atmosphere_favorites', JSON.stringify(updated));
   };
 
-  // formatTime removed — replaced by AnimatedTimer component
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
 
   // Sort Soundscapes so favorites show first as specified
   const sortedSoundscapes = [...SOUNDSCAPES].sort((a, b) => {
@@ -473,7 +476,7 @@ export default function AtmosphereTool({ onClose, color = '#fb7185' }: Atmospher
                   <div className="flex items-center gap-1.5 mt-2 text-white/60">
                     <Clock className="w-3.5 h-3.5 text-white/40" />
                     <span className="text-xs font-mono font-semibold tracking-wider">
-                      <AnimatedTimer totalSeconds={timeLeft} />
+                      {formatTime(timeLeft)}
                     </span>
                   </div>
 

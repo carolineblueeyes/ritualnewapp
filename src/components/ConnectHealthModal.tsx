@@ -9,7 +9,6 @@ interface ConnectHealthModalProps {
 }
 
 export default function ConnectHealthModal({ isOpen, onClose }: ConnectHealthModalProps) {
-  const { isDemoMode, setDemoMode } = useHealthData();
   const platform = useMemo(() => {
     const ua = navigator.userAgent || '';
     if (/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
@@ -49,38 +48,6 @@ export default function ConnectHealthModal({ isOpen, onClose }: ConnectHealthMod
           </div>
           <button onClick={onClose} className="p-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] transition-all">
             <X className="w-4 h-4 text-white/40" />
-          </button>
-        </div>
-
-        {/* DEMO MODE SHORTCUT */}
-        <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-4 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
-              <span className="text-xs font-semibold text-purple-300">Демонстрационный режим</span>
-            </div>
-            {isDemoMode && (
-              <span className="text-[9px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
-                Активен
-              </span>
-            )}
-          </div>
-          <p className="text-[10px] text-purple-200/70 leading-relaxed">
-            Включите демонстрационные показатели, чтобы сразу увидеть графики, индекс Сияния и детальную аналитику здоровья.
-          </p>
-          <button
-            onClick={() => {
-              setDemoMode(!isDemoMode);
-              onClose();
-            }}
-            className={`w-full py-2.5 rounded-xl text-xs font-medium transition-all flex items-center justify-center gap-1.5 active:scale-97 shadow-md ${
-              isDemoMode 
-                ? 'bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:bg-purple-900/40' 
-                : 'bg-purple-500 hover:bg-purple-600 text-white shadow-purple-500/10'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            {isDemoMode ? 'Выключить демо-показатели' : 'Включить демо-показатели'}
           </button>
         </div>
 
