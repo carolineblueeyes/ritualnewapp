@@ -4,6 +4,7 @@ import { Flame, Calendar, Compass, Lock, CheckCircle, HelpCircle } from 'lucide-
 import { UserStats, Practice } from '../types';
 import PracticeEngine from './PracticeEngine';
 import { chaptersData, ChapterId, getPracticeScript } from '../data/practices';
+import { deriveRealStats } from '../services/progressStats';
 
 interface StatsPanelProps {
   stats: UserStats;
@@ -67,9 +68,11 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
     return () => { document.body.style.overflow = ''; };
   }, [showCrystalInfo, activeMeditation]);
 
-  const totalMinutes = stats.totalMinutes !== undefined ? stats.totalMinutes : 0;
-  const completedCount = stats.completedCount !== undefined ? stats.completedCount : 0;
-  const streakDays = stats.streakDays !== undefined ? stats.streakDays : 0;
+  const realStats = deriveRealStats(stats);
+  const totalMinutes = realStats.totalMinutes;
+  const completedCount = realStats.completedCount;
+  const streakDays = realStats.streakDays;
+  const hasPracticeHistory = realStats.history.length > 0;
   const totalCompletedCount = completedLevelIds.length;
 
   let crystalState: 'fog' | 'spark' | 'crystal' | 'silence' | 'energy' | 'clarity' = 'fog';
@@ -244,7 +247,9 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
           <div className="flex-1 min-w-0">
             <span className="text-[9px] text-white/35 font-mono uppercase tracking-widest block">РћР‘Р©РђРЇ РЎРўРђР‘РР›Р¬РќРћРЎРўР¬</span>
             <p className="text-[11px] text-white/60 font-medium mt-1 leading-relaxed">
-              Р’С‹ РІС‹РїРѕР»РЅСЏРµС‚Рµ {Math.round((completedCount / (streakDays || 1)) * 10) / 10} РїСЂР°РєС‚РёРє РІ РґРµРЅСЊ. Р РµРіСѓР»СЏСЂРЅРѕСЃС‚СЊ СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ РЅР° РѕС‚Р»РёС‡РЅРѕРј СѓСЂРѕРІРЅРµ.
+              {hasPracticeHistory
+                ? `Вы выполняете ${Math.round((completedCount / (streakDays || 1)) * 10) / 10} практик в день. Регулярность считается только по реальной истории сессий.`
+                : 'Здесь появится аналитика после первой завершенной практики. Демо-данные больше не подставляются.'}
             </p>
           </div>
           <div className="flex flex-col items-end flex-none gap-0.5">

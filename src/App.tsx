@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sun, Activity, Mic, X, Send, User, BookOpen } from 'lucide-react';
 import { Practice, UserStats, ActiveTab } from './types';
@@ -14,6 +14,7 @@ import { updateMetricsAfterPractice } from './services/health/manager';
 import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { notificationService, rescheduleAll, scheduleSocialInvite, scheduleSubscriptionWarning } from './services/notifications';
+import { deriveRealStats, EMPTY_USER_STATS, parseStoredStats } from './services/progressStats';
 
 import BreathingTool from './components/BreathingTool';
 import ActivityTool from './components/ActivityTool';
@@ -156,16 +157,7 @@ const INITIAL_PRACTICES: Practice[] = [
   }
 ];
 
-const INITIAL_STATS: UserStats = {
-  shineScore: 0,
-  completedCount: 2,
-  streakDays: 4,
-  totalMinutes: 13,
-  history: [
-    { date: 'Вчера, 22:40', practiceId: 'end-day', practiceTitle: 'Закончить день', minutes: 12 },
-    { date: 'Вчера, 09:15', practiceId: 'pause', practiceTitle: 'Пауза', minutes: 3 }
-  ]
-};
+const INITIAL_STATS: UserStats = { ...EMPTY_USER_STATS };
 
 export default function App() {
   const {
@@ -200,7 +192,7 @@ export default function App() {
   });
   const [stats, setStats] = useState<UserStats>(() => {
     const saved = localStorage.getItem('ritual_stats');
-    return saved ? JSON.parse(saved) : INITIAL_STATS;
+    return saved ? parseStoredStats(saved) : INITIAL_STATS;
   });
 
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(() => {
@@ -221,6 +213,16 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
 
   const isAnyOverlayOpen = showSubscription || activeTool !== null || selectedPractice !== null || isVoiceOpen || !onboardingCompleted;
+
+  const syncNotificationSchedule = useCallback(async (includeSocialInvite = false) => {
+    if (!onboardingCompleted || !notificationService.isNotificationsEnabled()) return;
+    if (!await notificationService.ensureReady()) return;
+
+    await rescheduleAll();
+    if (includeSocialInvite) {
+      await scheduleSocialInvite();
+    }
+  }, [onboardingCompleted]);
 
   useEffect(() => {
     document.body.style.overflow = isAnyOverlayOpen ? 'hidden' : '';
@@ -272,19 +274,30 @@ export default function App() {
           setActiveTab('profile');
         }
       }
-    ).catch(e => console.warn('[App] Notification init failed:', e));
+    )
+      .then(async () => {
+        if (localStorage.getItem('ritual_onboarding_completed') !== 'true') return;
+        if (!notificationService.isNotificationsEnabled()) return;
+        if (!await notificationService.ensureReady()) return;
+        await rescheduleAll();
+      })
+      .catch(e => console.warn('[App] Notification init failed:', e));
   }, []);
 
   // Reschedule notifications when onboarding completes
   useEffect(() => {
-    if (onboardingCompleted && notificationService.isNotificationsEnabled()) {
-      notificationService.checkPermission().then((granted) => {
-        if (!granted) return;
-        rescheduleAll();
-        scheduleSocialInvite();
-      }).catch(e => console.warn('[App] Failed to reschedule notifications:', e));
-    }
-  }, [onboardingCompleted]);
+    syncNotificationSchedule(true).catch(e => console.warn('[App] Failed to reschedule notifications:', e));
+  }, [syncNotificationSchedule]);
+
+  // Restore reminder schedule when the app returns to foreground.
+  useEffect(() => {
+    const handler = CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive) return;
+      syncNotificationSchedule().catch(e => console.warn('[App] Failed to restore notifications:', e));
+    });
+
+    return () => { handler.then(h => h.remove()); };
+  }, [syncNotificationSchedule]);
 
   // Check subscription expiry
   useEffect(() => {
@@ -326,7 +339,7 @@ export default function App() {
   }, [practices]);
 
   useEffect(() => {
-    localStorage.setItem('ritual_stats', JSON.stringify(stats));
+    localStorage.setItem('ritual_stats', JSON.stringify(deriveRealStats(stats)));
   }, [stats]);
 
   useEffect(() => {
@@ -367,11 +380,11 @@ export default function App() {
 
     setStats((prev) => {
       const newShineScore = Math.min(100, prev.shineScore + 6);
-      return {
+      return deriveRealStats({
         shineScore: newShineScore,
-        completedCount: prev.completedCount + 1,
+        completedCount: prev.completedCount,
         streakDays: prev.streakDays,
-        totalMinutes: prev.totalMinutes + mins,
+        totalMinutes: prev.totalMinutes,
         history: [
           {
             date: timeStr,
@@ -381,7 +394,7 @@ export default function App() {
           },
           ...prev.history
         ]
-      };
+      });
     });
   };
 

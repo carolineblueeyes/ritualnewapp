@@ -16,12 +16,47 @@ function stableNotificationId(key: string): number {
   return Math.abs(hash % 1000000000) + 100000;
 }
 
+const MANAGED_REMINDER_TYPES = new Set<string>([
+  NotificationType.PracticeReminder,
+  NotificationType.PracticeSoon,
+  NotificationType.StreakWarning,
+  NotificationType.IntentionReminder,
+]);
+
 function getTimelineSlots(): { id: string; time: string; practiceId: string }[] {
   try {
     return JSON.parse(localStorage.getItem('ritual_day_slots') || '[]');
   } catch {
     return [];
   }
+}
+
+function getStoredManagedReminderIds(): number[] {
+  try {
+    const scheduled = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
+    if (!Array.isArray(scheduled)) return [];
+
+    return scheduled
+      .filter((notification: any) => MANAGED_REMINDER_TYPES.has(String(notification.type)))
+      .map((notification: any) => Number(notification.id))
+      .filter(Number.isFinite);
+  } catch {
+    return [];
+  }
+}
+
+function getManagedReminderIds(): number[] {
+  const slotIds = getTimelineSlots().flatMap((slot) => [
+    stableNotificationId(`practice:${slot.id}`),
+    stableNotificationId(`practice-soon:${slot.id}`),
+  ]);
+
+  return [
+    ...getStoredManagedReminderIds(),
+    ...slotIds,
+    stableNotificationId('streak-warning'),
+    stableNotificationId('intention-reminder'),
+  ];
 }
 
 function getCompletedSlots(): Record<string, boolean> {
@@ -225,9 +260,9 @@ export async function rescheduleAll(): Promise<void> {
   if (reschedulePromise) return reschedulePromise;
 
   reschedulePromise = (async () => {
-    await notificationService.rescheduleAll();
+    await notificationService.rescheduleAll(getManagedReminderIds());
     if (!notificationService.isNotificationsEnabled()) return;
-    if (notificationService.isNative() && !await notificationService.checkPermission()) return;
+    if (!await notificationService.ensureReady()) return;
 
     await scheduleTimelineReminders();
     await scheduleStreakReminder();

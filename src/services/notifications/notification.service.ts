@@ -21,7 +21,11 @@ async function canUseExactAlarm(): Promise<boolean> {
 
   try {
     const result = await LocalNotifications.checkExactNotificationSetting();
-    return Object.values(result ?? {}).some((value) => value === 'granted');
+    const granted = Object.values(result ?? {}).some((value) => value === 'granted');
+    if (!granted) {
+      console.warn('[NotificationService] Exact alarms are not granted; scheduling inexact notifications instead');
+    }
+    return granted;
   } catch (e) {
     console.warn('[NotificationService] Exact alarm setting check failed:', e);
     return false;
@@ -75,6 +79,20 @@ async function loadPlugins(): Promise<boolean> {
     pluginsLoaded = true;
     return false;
   }
+}
+
+async function ensureReady(request = false): Promise<boolean> {
+  if (!isNotificationsEnabled()) return false;
+  if (!isNative()) return false;
+
+  await loadPlugins();
+  if (!LocalNotifications) return false;
+
+  if (request) {
+    return requestPermission();
+  }
+
+  return checkPermission();
 }
 
 function isNative(): boolean {
@@ -209,14 +227,50 @@ async function cancelAll(): Promise<void> {
   }
 }
 
-async function scheduleLocal(payload: NotificationPayload, delaySeconds: number): Promise<number | null> {
-  if (!isNotificationsEnabled()) return null;
-  if (!isNative()) return null;
-  if (!await checkPermission()) return null;
+function readScheduledNotifications(): any[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeScheduledNotifications(notifications: any[]): void {
+  localStorage.setItem(STORAGE_KEYS.scheduled, JSON.stringify(notifications));
+}
+
+function rememberScheduledNotification(notification: any): void {
+  const scheduled = readScheduledNotifications().filter((item) => item.id !== notification.id);
+  scheduled.push(notification);
+  writeScheduledNotifications(scheduled);
+}
+
+async function cancelByIds(ids: number[]): Promise<void> {
+  const uniqueIds = [...new Set(ids)].filter(Number.isFinite);
+  if (uniqueIds.length === 0) return;
 
   try {
     await loadPlugins();
-    if (!LocalNotifications) return null;
+    if (!LocalNotifications) return;
+    await LocalNotifications.cancel({
+      notifications: uniqueIds.map((id) => ({ id })),
+    });
+
+    const remaining = readScheduledNotifications().filter((item) => !uniqueIds.includes(item.id));
+    if (remaining.length > 0) {
+      writeScheduledNotifications(remaining);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.scheduled);
+    }
+  } catch (e) {
+    console.warn('[NotificationService] cancelByIds failed:', e);
+  }
+}
+
+async function scheduleLocal(payload: NotificationPayload, delaySeconds: number): Promise<number | null> {
+  try {
+    if (!await ensureReady()) return null;
 
     const id = payload.id ?? createNotificationId();
     const date = new Date(Date.now() + delaySeconds * 1000);
@@ -245,9 +299,14 @@ async function scheduleLocal(payload: NotificationPayload, delaySeconds: number)
       true,
     );
 
-    const scheduled = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
-    scheduled.push({ id, type: payload.type, title: payload.title, body: payload.body, scheduledDate: date.toISOString(), data: payload.data });
-    localStorage.setItem(STORAGE_KEYS.scheduled, JSON.stringify(scheduled));
+    rememberScheduledNotification({
+      id,
+      type: payload.type,
+      title: payload.title,
+      body: payload.body,
+      scheduledDate: date.toISOString(),
+      data: payload.data,
+    });
 
     return id;
   } catch (e) {
@@ -261,13 +320,8 @@ async function scheduleAtTime(
   timeHHMM: string,
   repeats: boolean = false
 ): Promise<number | null> {
-  if (!isNotificationsEnabled()) return null;
-  if (!isNative()) return null;
-  if (!await checkPermission()) return null;
-
   try {
-    await loadPlugins();
-    if (!LocalNotifications) return null;
+    if (!await ensureReady()) return null;
 
     const [hours, minutes] = timeHHMM.split(':').map(Number);
     const id = payload.id ?? createNotificationId();
@@ -309,8 +363,7 @@ async function scheduleAtTime(
       !repeats,
     );
 
-    const scheduled = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
-    scheduled.push({
+    rememberScheduledNotification({
       id,
       type: payload.type,
       title: payload.title,
@@ -318,7 +371,6 @@ async function scheduleAtTime(
       scheduledDate: repeats ? `Daily at ${timeHHMM}` : (scheduleOpts.at as Date).toISOString(),
       data: payload.data,
     });
-    localStorage.setItem(STORAGE_KEYS.scheduled, JSON.stringify(scheduled));
 
     return id;
   } catch (e) {
@@ -328,16 +380,12 @@ async function scheduleAtTime(
 }
 
 async function cancelById(id: number): Promise<void> {
-  try {
-    await loadPlugins();
-    if (!LocalNotifications) return;
-    await LocalNotifications.cancel({ notifications: [{ id }] });
-  } catch {}
+  await cancelByIds([id]);
 }
 
-async function rescheduleAll(): Promise<void> {
+async function rescheduleAll(managedIds: number[]): Promise<void> {
   if (!isNotificationsEnabled()) return;
-  await cancelAll();
+  await cancelByIds(managedIds);
 }
 
 async function init(
@@ -364,6 +412,7 @@ async function init(
 
 export const notificationService = {
   init,
+  ensureReady,
   checkPermission,
   requestPermission,
   registerForPush,
@@ -371,6 +420,7 @@ export const notificationService = {
   scheduleLocal,
   scheduleAtTime,
   cancelById,
+  cancelByIds,
   rescheduleAll,
   isNative,
   isNotificationsEnabled,
