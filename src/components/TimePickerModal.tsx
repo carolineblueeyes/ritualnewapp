@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Check, Clock, X } from 'lucide-react';
 
@@ -21,6 +21,99 @@ export function normalizeTime(value: string | null | undefined, fallback: string
 function splitTime(value: string): { hour: string; minute: string } {
   const [hour, minute] = value.split(':');
   return { hour, minute };
+}
+
+interface TimeWheelColumnProps {
+  items: string[];
+  value: string;
+  onChange: (value: string) => void;
+}
+
+const ITEM_HEIGHT = 40;
+const WHEEL_PADDING = 80;
+
+function TimeWheelColumn({ items, value, onChange }: TimeWheelColumnProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const snapTimerRef = useRef<number | null>(null);
+  const isSnappingRef = useRef(false);
+
+  const getCenteredValue = () => {
+    const container = containerRef.current;
+    if (!container || items.length === 0) return value;
+
+    const center = container.scrollTop + container.clientHeight / 2;
+    const index = Math.round((center - WHEEL_PADDING - ITEM_HEIGHT / 2) / ITEM_HEIGHT);
+    const safeIndex = Math.min(items.length - 1, Math.max(0, index));
+    return items[safeIndex];
+  };
+
+  const scrollValueToCenter = (nextValue: string, behavior: ScrollBehavior = 'smooth') => {
+    const container = containerRef.current;
+    const index = items.indexOf(nextValue);
+    if (!container || index < 0) return;
+
+    isSnappingRef.current = true;
+    const nextScrollTop = WHEEL_PADDING + index * ITEM_HEIGHT + ITEM_HEIGHT / 2 - container.clientHeight / 2;
+    container.scrollTo({ top: Math.max(0, nextScrollTop), behavior });
+    window.setTimeout(() => {
+      isSnappingRef.current = false;
+    }, behavior === 'auto' ? 0 : 220);
+  };
+
+  useEffect(() => {
+    if (!items.includes(value)) return;
+    if (snapTimerRef.current !== null || isSnappingRef.current) return;
+    window.requestAnimationFrame(() => scrollValueToCenter(value, 'auto'));
+  }, [items, value]);
+
+  useEffect(() => {
+    return () => {
+      if (snapTimerRef.current !== null) {
+        window.clearTimeout(snapTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleScroll = () => {
+    const centeredValue = getCenteredValue();
+    if (!isSnappingRef.current && centeredValue !== value) {
+      onChange(centeredValue);
+    }
+
+    if (snapTimerRef.current !== null) {
+      window.clearTimeout(snapTimerRef.current);
+    }
+
+    snapTimerRef.current = window.setTimeout(() => {
+      snapTimerRef.current = null;
+      if (!isSnappingRef.current) {
+        scrollValueToCenter(getCenteredValue());
+      }
+    }, 90);
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      className="relative max-h-52 overflow-y-auto rounded-2xl bg-white/[0.015] py-20 hide-scrollbar"
+    >
+      {items.map(item => (
+        <button
+          key={item}
+          onClick={() => {
+            onChange(item);
+            scrollValueToCenter(item);
+          }}
+          className={`h-10 w-full text-center font-mono text-lg transition-all ${
+            value === item ? 'text-white font-semibold scale-110' : 'text-white/35'
+          }`}
+        >
+          {item}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function TimePickerModal({
@@ -91,33 +184,9 @@ export default function TimePickerModal({
 
         <div className="relative grid grid-cols-[1fr_auto_1fr] gap-3 py-5">
           <div className="absolute left-0 right-0 top-1/2 h-10 -translate-y-1/2 rounded-2xl border border-white/[0.06] bg-white/[0.03] pointer-events-none" />
-          <div className="relative max-h-52 overflow-y-auto rounded-2xl bg-white/[0.015] py-20 hide-scrollbar">
-            {hours.map(item => (
-              <button
-                key={item}
-                onClick={() => setHour(item)}
-                className={`h-10 w-full text-center font-mono text-lg transition-all ${
-                  hour === item ? 'text-white font-semibold scale-110' : 'text-white/35'
-                }`}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
+          <TimeWheelColumn items={hours} value={hour} onChange={setHour} />
           <div className="relative z-10 flex items-center justify-center text-xl font-mono text-white/35">:</div>
-          <div className="relative max-h-52 overflow-y-auto rounded-2xl bg-white/[0.015] py-20 hide-scrollbar">
-            {minutes.map(item => (
-              <button
-                key={item}
-                onClick={() => setMinute(item)}
-                className={`h-10 w-full text-center font-mono text-lg transition-all ${
-                  minute === item ? 'text-white font-semibold scale-110' : 'text-white/35'
-                }`}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
+          <TimeWheelColumn items={minutes} value={minute} onChange={setMinute} />
         </div>
 
         <div className="grid grid-cols-2 gap-2">

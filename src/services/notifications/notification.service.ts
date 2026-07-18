@@ -9,6 +9,21 @@ const PUSH_INSTALLATION_ID_KEY = 'ritual_push_installation_id';
 const PUSH_TOKEN_KEY = 'ritual_push_token';
 
 type PushPlatform = 'android' | 'ios' | 'web' | 'unknown';
+type PushRegistrationStatus =
+  | 'registered'
+  | 'not_native'
+  | 'messaging_unavailable'
+  | 'unsupported'
+  | 'permission_denied'
+  | 'token_unavailable'
+  | 'pushBackendUnavailable'
+  | 'backend_error';
+
+export interface PushRegistrationResult {
+  ok: boolean;
+  status: PushRegistrationStatus;
+  token?: string;
+}
 
 function createNotificationId(): number {
   return Math.floor(Math.random() * 2147483646) + 1;
@@ -85,7 +100,7 @@ async function loadPlugins(): Promise<boolean> {
   }
 }
 
-async function ensureReady(request = false): Promise<boolean> {
+async function ensureLocalNotificationsReady(request = false): Promise<boolean> {
   if (!isNotificationsEnabled()) return false;
   if (!isNative()) return false;
 
@@ -97,6 +112,10 @@ async function ensureReady(request = false): Promise<boolean> {
   }
 
   return checkPermission();
+}
+
+async function ensureReady(request = false): Promise<boolean> {
+  return ensureLocalNotificationsReady(request);
 }
 
 function isNative(): boolean {
@@ -116,8 +135,16 @@ function getPlatform(): PushPlatform {
   }
 }
 
-function getApiBaseUrl(): string {
-  return (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+function getApiBaseUrl(): string | null {
+  const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+  if (apiBaseUrl) return apiBaseUrl;
+
+  if (isNative()) {
+    console.warn('[NotificationService] VITE_API_URL is not configured; push token will stay local and remote push cannot target this install.');
+    return null;
+  }
+
+  return '';
 }
 
 function getInstallationId(): string {
@@ -129,17 +156,25 @@ function getInstallationId(): string {
   return id;
 }
 
-function extractNotificationData(notification: any): Record<string, unknown> {
-  const data = notification?.data;
-  return data && typeof data === 'object' ? data as Record<string, unknown> : {};
+function normalizeNotificationPayload(data?: Record<string, unknown>): Record<string, string> {
+  return normalizeNotificationData(data);
 }
 
-async function sendPushTokenToBackend(token: string): Promise<void> {
+function extractNotificationData(notification: any): Record<string, string> {
+  const data = notification?.extra || notification?.data;
+  return data && typeof data === 'object' ? normalizeNotificationPayload(data as Record<string, unknown>) : {};
+}
+
+async function sendPushTokenToBackend(token: string): Promise<PushRegistrationResult> {
   const apiBaseUrl = getApiBaseUrl();
   const installationId = getInstallationId();
   const platform = getPlatform();
 
   localStorage.setItem(PUSH_TOKEN_KEY, token);
+
+  if (apiBaseUrl === null) {
+    return { ok: false, status: 'pushBackendUnavailable', token };
+  }
 
   const response = await fetch(`${apiBaseUrl}/api/notifications/push-token`, {
     method: 'POST',
@@ -150,6 +185,8 @@ async function sendPushTokenToBackend(token: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Push token registration failed with ${response.status}`);
   }
+
+  return { ok: true, status: 'registered', token };
 }
 
 function isNotificationsEnabled(): boolean {
@@ -201,14 +238,14 @@ async function checkPermission(): Promise<boolean> {
   }
 }
 
-async function registerForPush(): Promise<void> {
-  if (!isNative()) return;
+async function registerForPush(): Promise<PushRegistrationResult> {
+  if (!isNative()) return { ok: false, status: 'not_native' };
   try {
     await loadPlugins();
-    if (!FirebaseMessaging) return;
+    if (!FirebaseMessaging) return { ok: false, status: 'messaging_unavailable' };
 
     const support = await FirebaseMessaging.isSupported?.();
-    if (support && support.isSupported === false) return;
+    if (support && support.isSupported === false) return { ok: false, status: 'unsupported' };
 
     let permStatus = await FirebaseMessaging.checkPermissions();
     if (permStatus.receive === 'prompt') {
@@ -218,13 +255,16 @@ async function registerForPush(): Promise<void> {
     if (permStatus.receive === 'granted') {
       const { token } = await FirebaseMessaging.getToken();
       if (token) {
-        await sendPushTokenToBackend(token);
+        return await sendPushTokenToBackend(token);
       }
+      return { ok: false, status: 'token_unavailable' };
     } else {
       console.warn('[NotificationService] Push permissions not granted');
+      return { ok: false, status: 'permission_denied' };
     }
   } catch (err) {
     console.error('[NotificationService] Failed to register push notifications:', err);
+    return { ok: false, status: 'backend_error' };
   }
 }
 
@@ -239,15 +279,18 @@ function addListeners(
     if (LocalNotifications) {
       LocalNotifications.addListener('localNotificationActionPerformed', (action: any) => {
         console.log('[NotificationService] Local opened:', action?.notification);
-        const data = action?.notification?.extra || action?.notification?.data || {};
-        onNotificationOpened?.(data);
+        onNotificationOpened?.(extractNotificationData(action?.notification));
       });
     }
 
     if (FirebaseMessaging) {
       FirebaseMessaging.addListener('tokenReceived', (event: any) => {
         console.log('[NotificationService] FCM token refreshed');
-        sendPushTokenToBackend(event.token).catch((e) => {
+        sendPushTokenToBackend(event.token).then((result) => {
+          if (!result.ok) {
+            console.warn(`[NotificationService] Push token refresh not fully registered: ${result.status}`);
+          }
+        }).catch((e) => {
           console.warn('[NotificationService] Failed to sync refreshed push token:', e);
         });
       });
@@ -341,11 +384,11 @@ async function scheduleLocal(payload: NotificationPayload, delaySeconds: number)
       body: payload.body,
       id,
       channelId: CHANNEL_ID,
-      smallIcon: 'ic_launcher',
+      smallIcon: 'ic_push_notification',
       largeIcon: 'ic_launcher',
       extra: {
         type: String(payload.type),
-        ...normalizeNotificationData(payload.data),
+        ...normalizeNotificationPayload(payload.data),
       },
     };
 
@@ -366,7 +409,7 @@ async function scheduleLocal(payload: NotificationPayload, delaySeconds: number)
       title: payload.title,
       body: payload.body,
       scheduledDate: date.toISOString(),
-      data: payload.data,
+      data: normalizeNotificationPayload(payload.data),
     });
 
     return id;
@@ -392,11 +435,11 @@ async function scheduleAtTime(
       body: payload.body,
       id,
       channelId: CHANNEL_ID,
-      smallIcon: 'ic_launcher',
+      smallIcon: 'ic_push_notification',
       largeIcon: 'ic_launcher',
       extra: {
         type: String(payload.type),
-        ...normalizeNotificationData(payload.data),
+        ...normalizeNotificationPayload(payload.data),
       },
     };
 
@@ -431,7 +474,7 @@ async function scheduleAtTime(
       title: payload.title,
       body: payload.body,
       scheduledDate: repeats ? `Daily at ${timeHHMM}` : (scheduleOpts.at as Date).toISOString(),
-      data: payload.data,
+      data: normalizeNotificationPayload(payload.data),
     });
 
     return id;
@@ -446,7 +489,6 @@ async function cancelById(id: number): Promise<void> {
 }
 
 async function rescheduleAll(managedIds: number[]): Promise<void> {
-  if (!isNotificationsEnabled()) return;
   await cancelByIds(managedIds);
 }
 
@@ -474,6 +516,7 @@ async function init(
 
 export const notificationService = {
   init,
+  ensureLocalNotificationsReady,
   ensureReady,
   checkPermission,
   requestPermission,

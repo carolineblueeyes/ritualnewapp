@@ -52,6 +52,12 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
     });
 
     if (result.ok) {
+      window.setTimeout(() => {
+        onRefreshHealth?.();
+      }, 1200);
+      window.setTimeout(() => {
+        onRefreshHealth?.();
+      }, 3500);
       setStep(5);
     }
   };

@@ -1,15 +1,9 @@
 package com.ritual.app;
 
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.os.Build;
-import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.PowerManager;
-import android.provider.Settings;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -20,14 +14,9 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
-    private static final String CHANNEL_ID = "ritual-reminders";
-    private static final String CHANNEL_NAME = "Напоминания Ritual";
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        createNotificationChannel();
-        requestBatteryOptimizationExemption();
         disableWebViewScrollbars();
         hideSystemUI();
         new Handler(Looper.getMainLooper()).postDelayed(this::hideSystemUI, 600);
@@ -41,39 +30,6 @@ public class MainActivity extends BridgeActivity {
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-    }
-
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH
-            );
-            channel.setDescription("Ежедневные напоминания о практиках и здоровье");
-            channel.enableVibration(true);
-            channel.setVibrationPattern(new long[]{0, 250, 250, 250});
-
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
-        }
-    }
-
-    private void requestBatteryOptimizationExemption() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
-                try {
-                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                    intent.setData(Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
-                } catch (Exception e) {
-                    // Some devices may not support this intent
-                }
-            }
-        }
     }
 
     @Override

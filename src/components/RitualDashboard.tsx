@@ -22,6 +22,7 @@ import {
   EMPTY_HISTORY_BY_METRIC,
   HealthAvailabilityByMetric,
   HealthHistoryByMetric,
+  HealthMetrics,
   HealthMetricKey,
   MetricAvailability,
 } from '../services/health/types';
@@ -34,8 +35,10 @@ interface RitualDashboardProps {
   onSelectPractice: (practice: Practice) => void;
   shine?: ShineBreakdown;
   healthSource?: DataSource;
+  healthMetrics?: HealthMetrics;
   historyByMetric?: HealthHistoryByMetric;
   availabilityByMetric?: HealthAvailabilityByMetric;
+  onRefreshHealth?: () => void | Promise<void>;
 }
 
 interface TimelineSlot {
@@ -56,8 +59,10 @@ export default function RitualDashboard({
   onSelectPractice,
   shine,
   healthSource,
+  healthMetrics: healthMetricsProp,
   historyByMetric: historyByMetricProp,
   availabilityByMetric: availabilityByMetricProp,
+  onRefreshHealth,
 }: RitualDashboardProps) {
   const shineScore = shine?.total ?? 0;
   const dataQuality = shine?.dataQuality ?? 'none';
@@ -339,12 +344,13 @@ export default function RitualDashboard({
   const [showNewTimePicker, setShowNewTimePicker] = useState(false);
 
   const { 
-    metrics: healthMetrics, 
+    metrics: dashboardHealthMetrics,
     historyByMetric: dashboardHistoryByMetric,
     availabilityByMetric: dashboardAvailabilityByMetric,
     refresh: refreshDashboardHealth
   } = useHealthData();
 
+  const healthMetrics = healthMetricsProp || dashboardHealthMetrics;
   const historyByMetric = historyByMetricProp || dashboardHistoryByMetric;
   const availabilityByMetric = availabilityByMetricProp || dashboardAvailabilityByMetric;
 
@@ -469,7 +475,10 @@ export default function RitualDashboard({
     }
 
     const result = await connectHealthSource(getCurrentHealthSourceType(), {
-      onRefresh: refreshDashboardHealth,
+      onRefresh: async () => {
+        await refreshDashboardHealth();
+        await onRefreshHealth?.();
+      },
       onSyncing: setIsHealthConnecting,
       onStep: setHealthConnectStep,
     });

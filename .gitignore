@@ -3,6 +3,7 @@ dist/
 .vite/
 .env
 .env.local
+android/app/google-services.json
 .data/
 *.log
 

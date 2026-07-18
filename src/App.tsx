@@ -161,6 +161,7 @@ const INITIAL_STATS: UserStats = { ...EMPTY_USER_STATS };
 
 export default function App() {
   const {
+    metrics: healthMetrics,
     source: healthSource,
     refresh: refreshHealth,
     shine,
@@ -237,10 +238,16 @@ export default function App() {
   const handleOnboardingComplete = useCallback(() => {
     setOnboardingCompleted(true);
     window.setTimeout(() => {
+      refreshHealth().catch(e => console.warn('[App] Failed to refresh health after onboarding:', e));
+    }, 1200);
+    window.setTimeout(() => {
+      refreshHealth().catch(e => console.warn('[App] Failed to refresh health after onboarding settle:', e));
+    }, 3500);
+    window.setTimeout(() => {
       requestNotificationAccessAfterOnboarding()
         .catch(e => console.warn('[App] Failed to request notification access after onboarding:', e));
     }, 350);
-  }, [requestNotificationAccessAfterOnboarding]);
+  }, [refreshHealth, requestNotificationAccessAfterOnboarding]);
 
   useEffect(() => {
     document.body.style.overflow = isAnyOverlayOpen ? 'hidden' : '';
@@ -277,11 +284,14 @@ export default function App() {
             const found = savedPractices.find((p: any) => p.id === practiceId);
             if (found) {
               setSelectedPractice(found);
+              return;
             }
           } catch (e) {
             console.warn('[App] Failed to find practice for notification:', e);
           }
-        } else if (screen === 'FocusTool') {
+        }
+
+        if (screen === 'FocusTool') {
           setActiveTool('focus');
         } else if (screen === 'BreathingTool') {
           setActiveTool('breathing');
@@ -291,6 +301,8 @@ export default function App() {
           setActiveTab('today');
         } else if (screen === 'Profile') {
           setActiveTab('profile');
+        } else if (screen === 'Subscription') {
+          setShowSubscription(true);
         } else if (href === '#today') {
           setActiveTab('today');
         } else if (href === '#practices') {
@@ -514,8 +526,10 @@ export default function App() {
                 onSelectPractice={handleSelectPractice}
                 shine={shine}
                 healthSource={healthSource}
+                healthMetrics={healthMetrics}
                 historyByMetric={historyByMetric}
                 availabilityByMetric={availabilityByMetric}
+                onRefreshHealth={refreshHealth}
               />
             </motion.div>
           )}
