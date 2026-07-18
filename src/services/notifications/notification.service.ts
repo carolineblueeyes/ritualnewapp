@@ -1,10 +1,14 @@
 import { NotificationPayload, STORAGE_KEYS } from './notification.types';
 
 let initialized = false;
-let PushNotifications: any = null;
+let FirebaseMessaging: any = null;
 let LocalNotifications: any = null;
 let pluginsLoaded = false;
 const CHANNEL_ID = 'ritual-reminders';
+const PUSH_INSTALLATION_ID_KEY = 'ritual_push_installation_id';
+const PUSH_TOKEN_KEY = 'ritual_push_token';
+
+type PushPlatform = 'android' | 'ios' | 'web' | 'unknown';
 
 function createNotificationId(): number {
   return Math.floor(Math.random() * 2147483646) + 1;
@@ -65,11 +69,11 @@ async function loadPlugins(): Promise<boolean> {
     LocalNotifications = localMod.LocalNotifications;
     
     try {
-      const pushMod = await import('@capacitor/push-notifications');
-      PushNotifications = pushMod.PushNotifications;
+      const messagingMod = await import('@capacitor-firebase/messaging');
+      FirebaseMessaging = messagingMod.FirebaseMessaging;
     } catch (e) {
-      console.warn('[NotificationService] PushNotifications module is not available on this platform:', e);
-      PushNotifications = null;
+      console.warn('[NotificationService] FirebaseMessaging module is not available on this platform:', e);
+      FirebaseMessaging = null;
     }
     
     pluginsLoaded = true;
@@ -103,6 +107,51 @@ function isNative(): boolean {
   }
 }
 
+function getPlatform(): PushPlatform {
+  try {
+    const platform = (window as any).Capacitor?.getPlatform?.();
+    return ['android', 'ios', 'web'].includes(platform) ? platform : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function getApiBaseUrl(): string {
+  return (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+}
+
+function getInstallationId(): string {
+  const existing = localStorage.getItem(PUSH_INSTALLATION_ID_KEY);
+  if (existing) return existing;
+
+  const id = crypto.randomUUID();
+  localStorage.setItem(PUSH_INSTALLATION_ID_KEY, id);
+  return id;
+}
+
+function extractNotificationData(notification: any): Record<string, unknown> {
+  const data = notification?.data;
+  return data && typeof data === 'object' ? data as Record<string, unknown> : {};
+}
+
+async function sendPushTokenToBackend(token: string): Promise<void> {
+  const apiBaseUrl = getApiBaseUrl();
+  const installationId = getInstallationId();
+  const platform = getPlatform();
+
+  localStorage.setItem(PUSH_TOKEN_KEY, token);
+
+  const response = await fetch(`${apiBaseUrl}/api/notifications/push-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ installationId, token, platform }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Push token registration failed with ${response.status}`);
+  }
+}
+
 function isNotificationsEnabled(): boolean {
   try {
     const quietMode = localStorage.getItem('ritual_quiet_mode_active');
@@ -130,6 +179,14 @@ async function requestPermission(): Promise<boolean> {
   }
 }
 
+async function requestNotificationAccess(): Promise<boolean> {
+  const granted = await requestPermission();
+  if (granted) {
+    await registerForPush();
+  }
+  return granted;
+}
+
 async function checkPermission(): Promise<boolean> {
   if (!isNative()) return false;
   try {
@@ -148,15 +205,21 @@ async function registerForPush(): Promise<void> {
   if (!isNative()) return;
   try {
     await loadPlugins();
-    if (!PushNotifications) return;
+    if (!FirebaseMessaging) return;
 
-    let permStatus = await PushNotifications.checkPermissions();
+    const support = await FirebaseMessaging.isSupported?.();
+    if (support && support.isSupported === false) return;
+
+    let permStatus = await FirebaseMessaging.checkPermissions();
     if (permStatus.receive === 'prompt') {
-      permStatus = await PushNotifications.requestPermissions();
+      permStatus = await FirebaseMessaging.requestPermissions();
     }
 
     if (permStatus.receive === 'granted') {
-      await PushNotifications.register();
+      const { token } = await FirebaseMessaging.getToken();
+      if (token) {
+        await sendPushTokenToBackend(token);
+      }
     } else {
       console.warn('[NotificationService] Push permissions not granted');
     }
@@ -181,29 +244,27 @@ function addListeners(
       });
     }
 
-    if (PushNotifications) {
-      PushNotifications.addListener('registration', (token: any) => {
-        console.log('[NotificationService] Push registration successful, token:', token.value);
-        localStorage.setItem('ritual_push_token', token.value);
+    if (FirebaseMessaging) {
+      FirebaseMessaging.addListener('tokenReceived', (event: any) => {
+        console.log('[NotificationService] FCM token refreshed');
+        sendPushTokenToBackend(event.token).catch((e) => {
+          console.warn('[NotificationService] Failed to sync refreshed push token:', e);
+        });
       });
 
-      PushNotifications.addListener('registrationError', (error: any) => {
-        console.error('[NotificationService] Push registration error:', error.error);
-      });
-
-      PushNotifications.addListener('pushNotificationReceived', (notification: any) => {
-        console.log('[NotificationService] Push received:', notification);
+      FirebaseMessaging.addListener('notificationReceived', (event: any) => {
+        console.log('[NotificationService] Push received:', event.notification);
         const quietMode = localStorage.getItem('ritual_quiet_mode_active');
         if (quietMode === 'true') {
           console.log('[NotificationService] Suppressing push notification since quiet mode is active');
           return;
         }
-        onNotificationReceived?.(notification.data ?? {});
+        onNotificationReceived?.(extractNotificationData(event.notification));
       });
 
-      PushNotifications.addListener('pushNotificationActionPerformed', (action: any) => {
-        console.log('[NotificationService] Push action performed:', action);
-        onNotificationOpened?.(action.notification?.data ?? {});
+      FirebaseMessaging.addListener('notificationActionPerformed', (event: any) => {
+        console.log('[NotificationService] Push action performed:', event);
+        onNotificationOpened?.(extractNotificationData(event.notification));
       });
     }
   } catch (e) {
@@ -415,6 +476,7 @@ export const notificationService = {
   ensureReady,
   checkPermission,
   requestPermission,
+  requestNotificationAccess,
   registerForPush,
   cancelAll,
   scheduleLocal,

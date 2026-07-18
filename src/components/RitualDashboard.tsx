@@ -10,6 +10,7 @@ import QuickStartCard from './QuickStartCard';
 import RingPurchaseBanner from './RingPurchaseBanner';
 import ConnectHealthModal from './ConnectHealthModal';
 import SelectModal from './SelectModal';
+import TimePickerModal, { normalizeTime } from './TimePickerModal';
 import { useHealthData } from '../hooks/useHealthData';
 import { DataSource } from '../services/health/manager';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
@@ -24,7 +25,7 @@ import {
   HealthMetricKey,
   MetricAvailability,
 } from '../services/health/types';
-import { rescheduleAll } from '../services/notifications';
+import { notificationService, rescheduleAll } from '../services/notifications';
 import { ARTICLES } from '../data/articles';
 
 interface RitualDashboardProps {
@@ -334,6 +335,8 @@ export default function RitualDashboard({
 
   const [showEditPracticeModal, setShowEditPracticeModal] = useState(false);
   const [showNewPracticeModal, setShowNewPracticeModal] = useState(false);
+  const [showEditTimePicker, setShowEditTimePicker] = useState(false);
+  const [showNewTimePicker, setShowNewTimePicker] = useState(false);
 
   const { 
     metrics: healthMetrics, 
@@ -535,6 +538,16 @@ export default function RitualDashboard({
   }, [slots]);
   useEffect(() => { localStorage.setItem('ritual_pregnancy_mode', isPregnancyMode ? 'true' : 'false'); }, [isPregnancyMode]);
 
+  const maybeRequestNotificationAccessForNewSlot = async () => {
+    if (!notificationService.isNotificationsEnabled() || !notificationService.isNative()) return;
+    if (await notificationService.checkPermission()) return;
+
+    const granted = await notificationService.requestNotificationAccess();
+    if (granted) {
+      await rescheduleAll();
+    }
+  };
+
   const handleAddSlot = (e: React.FormEvent) => {
     e.preventDefault();
     const newSlot: TimelineSlot = { id: Date.now().toString(), time: newSlotTime, practiceId: newSlotPracticeId };
@@ -543,6 +556,8 @@ export default function RitualDashboard({
     setIsAddingSlot(false);
     setNewSlotTime('14:00');
     setNewSlotPracticeId('');
+    maybeRequestNotificationAccessForNewSlot()
+      .catch(e => console.warn('[RitualDashboard] Failed to request notification access:', e));
   };
 
   const handleSaveSlotEdit = (id: string) => {
@@ -888,13 +903,13 @@ export default function RitualDashboard({
                                 className="p-3.5 bg-[#121216]/90 border border-white/[0.08] rounded-xl flex flex-col gap-2.5 shadow-2xl backdrop-blur-md overflow-hidden"
                               >
                                 <div className="flex gap-2">
-                                  <input 
-                                    type="text" 
-                                    value={editTime} 
-                                    onChange={(e) => setEditTime(e.target.value)} 
-                                    className="w-16 bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/[0.12]" 
-                                    placeholder="08:00" 
-                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowEditTimePicker(true)}
+                                    className="w-16 bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-1.5 text-xs font-mono tabular-nums text-white/80 text-left hover:border-white/[0.12] focus:outline-none focus:border-white/[0.12] transition-colors"
+                                  >
+                                    {normalizeTime(editTime, slot.time)}
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => setShowEditPracticeModal(true)}
@@ -990,7 +1005,13 @@ export default function RitualDashboard({
                       <div className="grid grid-cols-2 gap-3">
                         <div className="flex flex-col gap-1.5">
                           <label className="text-[9px] text-white/40 font-mono">Время</label>
-                          <input type="time" value={newSlotTime} onChange={(e) => setNewSlotTime(e.target.value)} className="bg-white/[0.02] border border-white/[0.06] rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/[0.12]" required />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewTimePicker(true)}
+                            className="bg-white/[0.02] border border-white/[0.06] rounded-lg px-2.5 py-1.5 text-xs font-mono tabular-nums text-white/80 text-left hover:border-white/[0.12] focus:outline-none focus:border-white/[0.12] transition-colors"
+                          >
+                            {normalizeTime(newSlotTime, '14:00')}
+                          </button>
                         </div>
                         <div className="flex flex-col gap-1.5">
                           <label className="text-[9px] text-white/40 font-mono">Ритуал</label>
@@ -2255,6 +2276,34 @@ export default function RitualDashboard({
         onConnectHealth={handleConnectHealth}
         isConnecting={isHealthConnecting}
         status={healthConnectStep}
+      />
+
+      <TimePickerModal
+        isOpen={showEditTimePicker}
+        title="Время практики"
+        subtitle="Выберите, когда напомнить о ритуале"
+        value={editTime}
+        defaultValue="08:00"
+        minuteStep={5}
+        onClose={() => setShowEditTimePicker(false)}
+        onConfirm={(value) => {
+          setEditTime(value);
+          setShowEditTimePicker(false);
+        }}
+      />
+
+      <TimePickerModal
+        isOpen={showNewTimePicker}
+        title="Новый слот"
+        subtitle="Время появится в таймлайне дня"
+        value={newSlotTime}
+        defaultValue="14:00"
+        minuteStep={5}
+        onClose={() => setShowNewTimePicker(false)}
+        onConfirm={(value) => {
+          setNewSlotTime(value);
+          setShowNewTimePicker(false);
+        }}
       />
 
       <SelectModal

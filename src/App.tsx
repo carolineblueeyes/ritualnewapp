@@ -224,6 +224,24 @@ export default function App() {
     }
   }, [onboardingCompleted]);
 
+  const requestNotificationAccessAfterOnboarding = useCallback(async () => {
+    if (!notificationService.isNotificationsEnabled()) return;
+
+    const granted = await notificationService.requestNotificationAccess();
+    if (!granted) return;
+
+    await rescheduleAll();
+    await scheduleSocialInvite();
+  }, []);
+
+  const handleOnboardingComplete = useCallback(() => {
+    setOnboardingCompleted(true);
+    window.setTimeout(() => {
+      requestNotificationAccessAfterOnboarding()
+        .catch(e => console.warn('[App] Failed to request notification access after onboarding:', e));
+    }, 350);
+  }, [requestNotificationAccessAfterOnboarding]);
+
   useEffect(() => {
     document.body.style.overflow = isAnyOverlayOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -251,6 +269,7 @@ export default function App() {
         console.log('[App] Notification opened with data:', data);
         const practiceId = data?.practiceId as string | undefined;
         const screen = data?.screen as string | undefined;
+        const href = data?.href as string | undefined;
         
         if (practiceId) {
           try {
@@ -271,6 +290,14 @@ export default function App() {
         } else if (screen === 'Dashboard') {
           setActiveTab('today');
         } else if (screen === 'Profile') {
+          setActiveTab('profile');
+        } else if (href === '#today') {
+          setActiveTab('today');
+        } else if (href === '#practices') {
+          setActiveTab('practices');
+        } else if (href === '#progress') {
+          setActiveTab('progress');
+        } else if (href === '#profile') {
           setActiveTab('profile');
         }
       }
@@ -628,7 +655,7 @@ export default function App() {
       {/* Onboarding */}
       <AnimatePresence>
         {!onboardingCompleted && (
-          <Onboarding onComplete={() => setOnboardingCompleted(true)} onRefreshHealth={refreshHealth} />
+          <Onboarding onComplete={handleOnboardingComplete} onRefreshHealth={refreshHealth} />
         )}
       </AnimatePresence>
 

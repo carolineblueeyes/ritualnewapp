@@ -11,6 +11,7 @@ import { connectHealthSource } from '../services/health/connectFlow';
 import { notificationService, rescheduleAll } from '../services/notifications';
 import { STORAGE_KEYS } from '../services/notifications';
 import SelectModal from './SelectModal';
+import TimePickerModal, { normalizeTime } from './TimePickerModal';
 
 interface ProfileProps {
   onOpenSubscription: () => void;
@@ -32,7 +33,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
     return val === null ? true : val === 'true';
   });
   const [reminderTime, setReminderTime] = useState(() => {
-    return localStorage.getItem(STORAGE_KEYS.reminderTime) || '21:00';
+    return normalizeTime(localStorage.getItem(STORAGE_KEYS.reminderTime), '21:00');
   });
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [currentIcon, setCurrentIcon] = useState('Classic Slate');
@@ -500,7 +501,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             onClick={async () => {
               const next = !notificationsEnabled;
               if (next) {
-                const granted = await notificationService.requestPermission();
+                const granted = await notificationService.requestNotificationAccess();
                 if (!granted && notificationService.isNative()) return;
               }
               setNotificationsEnabled(next);
@@ -623,8 +624,26 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
 
       {/* OVERLAYS & MODALS */}
       <AnimatePresence>
+        <TimePickerModal
+          isOpen={showTimePicker}
+          title="Время напоминания"
+          subtitle="Ежедневное напоминание о практике"
+          value={reminderTime}
+          defaultValue="21:00"
+          minuteStep={5}
+          onClose={() => setShowTimePicker(false)}
+          onConfirm={(value) => {
+            setReminderTime(value);
+            localStorage.setItem(STORAGE_KEYS.reminderTime, value);
+            setShowTimePicker(false);
+            if (notificationsEnabled) {
+              rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule reminder time:', e));
+            }
+          }}
+        />
+
         {/* Time Picker Modal */}
-        {showTimePicker && (
+        {false && showTimePicker && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
           >

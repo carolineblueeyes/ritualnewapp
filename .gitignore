@@ -3,6 +3,7 @@ dist/
 .vite/
 .env
 .env.local
+.data/
 *.log
 
 # Android build artifacts (но не исходники)

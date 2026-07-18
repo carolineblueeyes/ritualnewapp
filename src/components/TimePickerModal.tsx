@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Check, Clock, X } from 'lucide-react';
 
@@ -44,6 +44,13 @@ export default function TimePickerModal({
     [minuteStep],
   );
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const next = splitTime(normalizeTime(value, defaultValue));
+    setHour(next.hour);
+    setMinute(minutes.includes(next.minute) ? next.minute : minutes[0] ?? '00');
+  }, [defaultValue, isOpen, minutes, value]);
+
   if (!isOpen) return null;
 
   const confirm = () => {
@@ -84,7 +91,7 @@ export default function TimePickerModal({
 
         <div className="relative grid grid-cols-[1fr_auto_1fr] gap-3 py-5">
           <div className="absolute left-0 right-0 top-1/2 h-10 -translate-y-1/2 rounded-2xl border border-white/[0.06] bg-white/[0.03] pointer-events-none" />
-          <div className="relative max-h-52 overflow-y-auto rounded-2xl bg-white/[0.015] py-20 scrollbar-none">
+          <div className="relative max-h-52 overflow-y-auto rounded-2xl bg-white/[0.015] py-20 hide-scrollbar">
             {hours.map(item => (
               <button
                 key={item}
@@ -98,7 +105,7 @@ export default function TimePickerModal({
             ))}
           </div>
           <div className="relative z-10 flex items-center justify-center text-xl font-mono text-white/35">:</div>
-          <div className="relative max-h-52 overflow-y-auto rounded-2xl bg-white/[0.015] py-20 scrollbar-none">
+          <div className="relative max-h-52 overflow-y-auto rounded-2xl bg-white/[0.015] py-20 hide-scrollbar">
             {minutes.map(item => (
               <button
                 key={item}

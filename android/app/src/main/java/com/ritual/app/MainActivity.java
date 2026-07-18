@@ -11,6 +11,7 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -22,9 +23,19 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         createNotificationChannel();
+        disableWebViewScrollbars();
         hideSystemUI();
         new Handler(Looper.getMainLooper()).postDelayed(this::hideSystemUI, 600);
         new Handler(Looper.getMainLooper()).postDelayed(this::hideSystemUI, 1500);
+    }
+
+    private void disableWebViewScrollbars() {
+        WebView webView = getBridge().getWebView();
+        if (webView == null) return;
+
+        webView.setVerticalScrollBarEnabled(false);
+        webView.setHorizontalScrollBarEnabled(false);
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
     }
 
     private void createNotificationChannel() {

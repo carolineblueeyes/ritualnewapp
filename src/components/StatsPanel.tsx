@@ -73,6 +73,10 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
   const completedCount = realStats.completedCount;
   const streakDays = realStats.streakDays;
   const hasPracticeHistory = realStats.history.length > 0;
+  const averagePracticesPerDay = Math.round((completedCount / (streakDays || 1)) * 10) / 10;
+  const stabilityText = hasPracticeHistory
+    ? `Р’С‹ РІС‹РїРѕР»РЅСЏРµС‚Рµ ${averagePracticesPerDay} РїСЂР°РєС‚РёРє РІ РґРµРЅСЊ. Р РµРіСѓР»СЏСЂРЅРѕСЃС‚СЊ СЃС‡РёС‚Р°РµС‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕ СЂРµР°Р»СЊРЅРѕР№ РёСЃС‚РѕСЂРёРё СЃРµСЃСЃРёР№.`
+    : 'Р—РґРµСЃСЊ РїРѕСЏРІРёС‚СЃСЏ Р°РЅР°Р»РёС‚РёРєР° РїРѕСЃР»Рµ РїРµСЂРІРѕР№ Р·Р°РІРµСЂС€РµРЅРЅРѕР№ РїСЂР°РєС‚РёРєРё. Р”РµРјРѕ-РґР°РЅРЅС‹Рµ Р±РѕР»СЊС€Рµ РЅРµ РїРѕРґСЃС‚Р°РІР»СЏСЋС‚СЃСЏ.';
   const totalCompletedCount = completedLevelIds.length;
 
   let crystalState: 'fog' | 'spark' | 'crystal' | 'silence' | 'energy' | 'clarity' = 'fog';
@@ -247,9 +251,7 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
           <div className="flex-1 min-w-0">
             <span className="text-[9px] text-white/35 font-mono uppercase tracking-widest block">РћР‘Р©РђРЇ РЎРўРђР‘РР›Р¬РќРћРЎРўР¬</span>
             <p className="text-[11px] text-white/60 font-medium mt-1 leading-relaxed">
-              {hasPracticeHistory
-                ? `Вы выполняете ${Math.round((completedCount / (streakDays || 1)) * 10) / 10} практик в день. Регулярность считается только по реальной истории сессий.`
-                : 'Здесь появится аналитика после первой завершенной практики. Демо-данные больше не подставляются.'}
+              {stabilityText}
             </p>
           </div>
           <div className="flex flex-col items-end flex-none gap-0.5">
