@@ -5,9 +5,9 @@ import {
   Gift, Users, Edit3, Check, Moon, Sun, Bluetooth,
   RefreshCw, Battery, Cpu, AlertCircle, Activity, Sparkles, ShoppingBag, Clock
 } from 'lucide-react';
-import { healthService } from '../services/health/health.service';
 import { bleRingService } from '../services/health/ring';
 import { clearHealthCache } from '../services/health/manager';
+import { connectHealthSource } from '../services/health/connectFlow';
 import { notificationService, rescheduleAll } from '../services/notifications';
 import { STORAGE_KEYS } from '../services/notifications';
 import SelectModal from './SelectModal';
@@ -157,34 +157,16 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   };
 
   const startSyncSequence = async (type: 'healthkit' | 'healthconnect') => {
-    setIsSyncing(true);
-    setSyncProgress(0);
-    setSyncStep('Запрос разрешений...');
+    const result = await connectHealthSource(type, {
+      onRefresh: onRefreshHealth,
+      onSyncing: setIsSyncing,
+      onProgress: setSyncProgress,
+      onStep: setSyncStep,
+    });
 
-    try {
-      const granted = await healthService.requestPermissions();
-      if (!granted) {
-        setSyncStep('Разрешения не получены');
-        setTimeout(() => setIsSyncing(false), 1500);
-        return;
-      }
-
-      setSyncProgress(30);
-      setSyncStep('Чтение данных здоровья...');
-      await healthService.getMetrics();
-
-      setSyncProgress(70);
-      setSyncStep('Расчёт Индекса Сияния...');
-
-      if (onRefreshHealth) onRefreshHealth();
-
-      setSyncProgress(100);
-      setSyncStep('Данные импортированы!');
-      clearHealthCache();
-      setTimeout(() => setIsSyncing(false), 1000);
-    } catch (err) {
-      setSyncStep('Ошибка синхронизации');
-      setTimeout(() => setIsSyncing(false), 1500);
+    if (result.ok) {
+      if (type === 'healthkit') setIsHealthKitConnected(true);
+      else setIsHealthConnectConnected(true);
     }
   };
 
@@ -195,18 +177,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
       setShowHealthConnectPermissions(false);
     }
 
-    if (healthService.isNative()) {
-      const granted = await healthService.requestPermissions();
-      if (granted) {
-        if (type === 'healthkit') setIsHealthKitConnected(true);
-        else setIsHealthConnectConnected(true);
-        startSyncSequence(type);
-      }
-    } else {
-      if (type === 'healthkit') setIsHealthKitConnected(true);
-      else setIsHealthConnectConnected(true);
-      startSyncSequence(type);
-    }
+    startSyncSequence(type);
   };
 
   const handleDisconnectHealth = (type: 'healthkit' | 'healthconnect') => {

@@ -9,6 +9,7 @@ import {
 } from '../services/health/types';
 import { fetchHealthData, DataSource, clearHealthCache } from '../services/health/manager';
 import { healthService } from '../services/health/health.service';
+import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { bleRingService } from '../services/health/ring';
 import { calculateShine, ShineBreakdown } from '../services/health/shine';
 import { scheduleHealthInsight } from '../services/notifications';
@@ -83,17 +84,9 @@ export function useHealthData(): UseHealthDataReturn {
   }, [load]);
 
   const connectHealthApp = useCallback(async (): Promise<boolean> => {
-    try {
-      const granted = await healthService.requestPermissions();
-      if (granted) {
-        await refresh();
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.warn('[useHealthData] connectHealthApp failed:', err);
-      return false;
-    }
+    const type: HealthConnectSourceType = healthService.getPlatform() === 'ios' ? 'healthkit' : 'healthconnect';
+    const result = await connectHealthSource(type, { onRefresh: refresh });
+    return result.ok;
   }, [refresh]);
 
   const disconnectHealthApp = useCallback(() => {

@@ -12,6 +12,8 @@ import ConnectHealthModal from './ConnectHealthModal';
 import SelectModal from './SelectModal';
 import { useHealthData } from '../hooks/useHealthData';
 import { DataSource } from '../services/health/manager';
+import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
+import { healthService } from '../services/health/health.service';
 import { ShineBreakdown, calculateShine, getShineLabel, getShineColor } from '../services/health/shine';
 import {
   DailyHealthPoint,
@@ -337,7 +339,7 @@ export default function RitualDashboard({
     metrics: healthMetrics, 
     historyByMetric: dashboardHistoryByMetric,
     availabilityByMetric: dashboardAvailabilityByMetric,
-    connectHealthApp: dashboardConnectHealth
+    refresh: refreshDashboardHealth
   } = useHealthData();
 
   const historyByMetric = historyByMetricProp || dashboardHistoryByMetric;
@@ -450,13 +452,27 @@ export default function RitualDashboard({
 
   const [isHealthOpen, setIsHealthOpen] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [isHealthConnecting, setIsHealthConnecting] = useState(false);
+  const [healthConnectStep, setHealthConnectStep] = useState('');
 
-  const handleConnectHealth = () => {
-    const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNative;
-    if (isNative) {
-      dashboardConnectHealth();
-    } else {
+  const getCurrentHealthSourceType = (): HealthConnectSourceType => {
+    return healthService.getPlatform() === 'ios' ? 'healthkit' : 'healthconnect';
+  };
+
+  const handleConnectHealth = async () => {
+    if (!healthService.isNative()) {
       setShowConnectModal(true);
+      return;
+    }
+
+    const result = await connectHealthSource(getCurrentHealthSourceType(), {
+      onRefresh: refreshDashboardHealth,
+      onSyncing: setIsHealthConnecting,
+      onStep: setHealthConnectStep,
+    });
+
+    if (result.ok) {
+      setShowConnectModal(false);
     }
   };
   const getAvailabilityLabel = (availability: MetricAvailability) => {
@@ -2233,7 +2249,13 @@ export default function RitualDashboard({
         )}
       </AnimatePresence>
 
-      <ConnectHealthModal isOpen={showConnectModal} onClose={() => setShowConnectModal(false)} />
+      <ConnectHealthModal
+        isOpen={showConnectModal}
+        onClose={() => setShowConnectModal(false)}
+        onConnectHealth={handleConnectHealth}
+        isConnecting={isHealthConnecting}
+        status={healthConnectStep}
+      />
 
       <SelectModal
         isOpen={showEditPracticeModal}

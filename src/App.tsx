@@ -615,7 +615,7 @@ export default function App() {
       {/* Onboarding */}
       <AnimatePresence>
         {!onboardingCompleted && (
-          <Onboarding onComplete={() => setOnboardingCompleted(true)} />
+          <Onboarding onComplete={() => setOnboardingCompleted(true)} onRefreshHealth={refreshHealth} />
         )}
       </AnimatePresence>
 

@@ -4,5 +4,7 @@ export { healthService } from './health.service';
 export { bleRingService } from './ring';
 export { fetchHealthData, getCachedHealthData, clearHealthCache } from './manager';
 export type { CombinedHealthState, DataSource } from './manager';
+export { connectHealthSource } from './connectFlow';
+export type { ConnectHealthSourceResult, HealthConnectSourceType } from './connectFlow';
 export { calculateShine, getShineLabel, getShineColor } from './shine';
 export type { ShineBreakdown } from './shine';

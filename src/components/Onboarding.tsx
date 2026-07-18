@@ -1,13 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Brain, Mic, Compass, Award, ShieldAlert, ArrowRight, Apple, Chrome, User, Smartphone, Activity, ShoppingBag } from 'lucide-react';
+import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
+import { healthService } from '../services/health/health.service';
+import ConnectHealthModal from './ConnectHealthModal';
 
 interface OnboardingProps {
   onComplete: () => void;
+  onRefreshHealth?: () => void | Promise<void>;
 }
 
-export default function Onboarding({ onComplete }: OnboardingProps) {
+export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingProps) {
   const [step, setStep] = useState(0);
+  const [isHealthSyncing, setIsHealthSyncing] = useState(false);
+  const [healthSyncProgress, setHealthSyncProgress] = useState(0);
+  const [healthSyncStep, setHealthSyncStep] = useState('');
+  const [showHealthInfoModal, setShowHealthInfoModal] = useState(false);
 
   // Auto transition from Step 0 (Logo Splash) to Step 1 after 1.5 seconds
   useEffect(() => {
@@ -18,6 +26,25 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       return () => clearTimeout(timer);
     }
   }, [step]);
+
+  const connectSource = async (type: HealthConnectSourceType) => {
+    if (!healthService.isNative()) {
+      setHealthSyncStep('Подключение доступно в мобильном приложении');
+      setShowHealthInfoModal(true);
+      return;
+    }
+
+    const result = await connectHealthSource(type, {
+      onRefresh: onRefreshHealth,
+      onSyncing: setIsHealthSyncing,
+      onProgress: setHealthSyncProgress,
+      onStep: setHealthSyncStep,
+    });
+
+    if (result.ok) {
+      setStep(5);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-[#08080a] text-white flex flex-col justify-between overflow-hidden select-none">
@@ -269,24 +296,20 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
               <div className="flex flex-col gap-3 w-full max-w-[300px] mt-4">
                 <button
-                  onClick={() => {
-                    localStorage.setItem('ritual_health_source', 'healthapp');
-                    setStep(5);
-                  }}
+                  onClick={() => connectSource('healthkit')}
+                  disabled={isHealthSyncing}
                   className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
                 >
                   <Apple className="w-5 h-5 fill-current" />
                   <span>Apple HealthKit</span>
                 </button>
                 <button
-                  onClick={() => {
-                    localStorage.setItem('ritual_health_source', 'healthapp');
-                    setStep(5);
-                  }}
+                  onClick={() => connectSource('healthconnect')}
+                  disabled={isHealthSyncing}
                   className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
                 >
                   <Smartphone className="w-5 h-5" />
-                  <span>Health Connect</span>
+                  <span>Подключить Health Connect</span>
                 </button>
                 <button
                   onClick={() => window.open('https://ritual.store', '_blank')}
@@ -297,6 +320,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                 </button>
                 <button
                   onClick={() => setStep(5)}
+                  disabled={isHealthSyncing}
                   className="text-center text-xs font-mono tracking-widest text-white/40 hover:text-white/60 mt-3 uppercase"
                 >
                   пропустить
@@ -346,7 +370,21 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </div>
           </motion.div>
         )}
+        {step === 4 && healthSyncStep && (
+          <div className="absolute left-6 right-6 bottom-20 z-20 mx-auto max-w-[300px] rounded-2xl border border-white/[0.05] bg-[#121215]/95 p-3 text-left shadow-2xl">
+            <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-white/60 uppercase tracking-wider">
+              <span>{healthSyncStep}</span>
+              <span>{Math.round(healthSyncProgress)}%</span>
+            </div>
+            {isHealthSyncing && (
+              <div className="mt-2 h-1 rounded-full bg-white/[0.05] overflow-hidden">
+                <div className="h-full bg-amber-300/70 transition-all" style={{ width: `${healthSyncProgress}%` }} />
+              </div>
+            )}
+          </div>
+        )}
       </AnimatePresence>
+      <ConnectHealthModal isOpen={showHealthInfoModal} onClose={() => setShowHealthInfoModal(false)} />
     </div>
   );
 }
