@@ -8,6 +8,7 @@ import {
 import { bleRingService } from '../services/health/ring';
 import { clearHealthCache } from '../services/health/manager';
 import { connectHealthSource } from '../services/health/connectFlow';
+import { healthService } from '../services/health/health.service';
 import { notificationService, rescheduleAll } from '../services/notifications';
 import { STORAGE_KEYS } from '../services/notifications';
 import SelectModal from './SelectModal';
@@ -36,7 +37,6 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
     return normalizeTime(localStorage.getItem(STORAGE_KEYS.reminderTime), '21:00');
   });
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [currentIcon, setCurrentIcon] = useState('Classic Slate');
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
   const [userGender, setUserGender] = useState(() => localStorage.getItem('ritual_user_gender') || 'unspecified');
 
@@ -54,8 +54,6 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   );
 
   const [showGenderModal, setShowGenderModal] = useState(false);
-  const [showIconModal, setShowIconModal] = useState(false);
-
   const [showBleScanner, setShowBleScanner] = useState(false);
   const [showHealthKitPermissions, setShowHealthKitPermissions] = useState(false);
   const [showHealthConnectPermissions, setShowHealthConnectPermissions] = useState(false);
@@ -70,6 +68,8 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   const [syncStep, setSyncStep] = useState('');
 
   const isAnyModalOpen = showBleScanner || showHealthKitPermissions || showHealthConnectPermissions || isSyncing;
+  const profilePlatform = healthService.getPlatform();
+  const showAppleHealth = profilePlatform === 'ios';
 
   useEffect(() => {
     if (isAnyModalOpen) {
@@ -299,6 +299,8 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           </div>
         )}
 
+        {showAppleHealth && (
+          <>
         {/* Apple HealthKit */}
         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex justify-between items-center text-left">
           <div className="flex items-center gap-3">
@@ -337,6 +339,11 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           )}
         </div>
 
+          </>
+        )}
+
+        {!showAppleHealth && (
+          <>
         {/* Google Health Connect */}
         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex justify-between items-center text-left">
           <div className="flex items-center gap-3">
@@ -374,6 +381,9 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             </button>
           )}
         </div>
+
+          </>
+        )}
 
         {/* BLE Ring */}
         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex flex-col gap-3 text-left">
@@ -570,28 +580,6 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           onSelect={(v) => handleGenderChange(v)}
         />
 
-        <div className="flex justify-between items-center py-2">
-          <span className="text-xs text-white/50">Иконка приложения</span>
-          <button
-            onClick={() => setShowIconModal(true)}
-            className="bg-transparent text-xs text-white/50 focus:outline-none cursor-pointer hover:text-white/70 transition-colors"
-          >
-            {currentIcon}
-          </button>
-        </div>
-
-        <SelectModal
-          isOpen={showIconModal}
-          onClose={() => setShowIconModal(false)}
-          title="Иконка приложения"
-          options={[
-            { value: 'Classic Slate', label: 'Classic Slate' },
-            { value: 'Aurora Neon', label: 'Aurora Neon' },
-            { value: 'Golden Hour', label: 'Golden Hour' },
-          ]}
-          selectedValue={currentIcon}
-          onSelect={(v) => setCurrentIcon(v)}
-        />
       </div>
 
       {/* SECTION 5: Обратная связь */}

@@ -26,7 +26,7 @@ export async function connectHealthSource(
   onStep?.('Запрос разрешений...');
 
   if (!healthService.isNative()) {
-    onStep?.('Подключение доступно в мобильном приложении');
+    onStep?.('Подключение доступно только в мобильном приложении');
     window.setTimeout(() => onSyncing?.(false), 1500);
     return { ok: false, reason: 'not_native' };
   }
@@ -52,7 +52,7 @@ export async function connectHealthSource(
     await onRefresh?.();
 
     onProgress?.(100);
-    onStep?.('Данные импортированы!');
+    onStep?.('Данные импортированы');
     window.setTimeout(() => onSyncing?.(false), 1000);
     return { ok: true };
   } catch (err) {

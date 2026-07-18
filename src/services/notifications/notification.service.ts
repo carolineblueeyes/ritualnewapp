@@ -405,6 +405,7 @@ async function scheduleAtTime(
     if (repeats) {
       scheduleOpts.on = { hour: hours, minute: minutes };
       scheduleOpts.repeats = true;
+      scheduleOpts.allowWhileIdle = true;
     } else {
       const now = new Date();
       const target = new Date();

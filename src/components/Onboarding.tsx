@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Brain, Mic, Compass, Award, ShieldAlert, ArrowRight, Apple, Chrome, User, Smartphone, Activity, ShoppingBag } from 'lucide-react';
+import { Sparkles, Brain, Mic, Compass, Award, ArrowRight, Apple, Chrome, User, Smartphone, Activity, ShoppingBag } from 'lucide-react';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
 import ConnectHealthModal from './ConnectHealthModal';
@@ -17,19 +17,29 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
   const [healthSyncStep, setHealthSyncStep] = useState('');
   const [showHealthInfoModal, setShowHealthInfoModal] = useState(false);
 
-  // Auto transition from Step 0 (Logo Splash) to Step 1 after 1.5 seconds
+  const healthPlatform = healthService.getPlatform();
+  const healthSourceType: HealthConnectSourceType = healthPlatform === 'ios' ? 'healthkit' : 'healthconnect';
+  const healthSourceLabel = healthPlatform === 'ios'
+    ? 'Apple Health'
+    : healthPlatform === 'android'
+      ? 'Health Connect'
+      : 'Мобильное приложение';
+  const healthConnectLabel = healthPlatform === 'ios'
+    ? 'Подключить Apple Health'
+    : healthPlatform === 'android'
+      ? 'Подключить Health Connect'
+      : 'Подключение в мобильном приложении';
+
   useEffect(() => {
-    if (step === 0) {
-      const timer = setTimeout(() => {
-        setStep(1);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
+    if (step !== 0) return;
+    const timer = window.setTimeout(() => setStep(1), 1500);
+    return () => window.clearTimeout(timer);
   }, [step]);
 
   const connectSource = async (type: HealthConnectSourceType) => {
     if (!healthService.isNative()) {
-      setHealthSyncStep('Подключение доступно в мобильном приложении');
+      setHealthSyncProgress(0);
+      setHealthSyncStep('Подключение доступно только в мобильном приложении');
       setShowHealthInfoModal(true);
       return;
     }
@@ -46,9 +56,13 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
     }
   };
 
+  const saveGender = (gender: 'male' | 'female' | 'unspecified') => {
+    localStorage.setItem('ritual_user_gender', gender);
+    setStep(3);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-[#08080a] text-white flex flex-col justify-between overflow-hidden select-none">
-      {/* Background Image / Ambient Glow */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-40">
         <img
           src="https://lh3.googleusercontent.com/aida-public/AB6AXuAQK0QprKpBH_G_LRor3NkyGFydwOQr7OIb3gTOGBd8e9fTUEFHmQ3aNbcOceDmnQsjDVlR8X3fXvc-1pF-9W32ykmqpkKscw6WQRU-heixwuZws89Qim-Fej8dextes2I0FYrZ86pd_GZhPL8uNk5LTSnUmByOYGSqMNOWLiog8TsZKwfU3I-mwforEQjaw4BaxrXlWtrAi5ZZXd9rav5tZufCOH9-03AMr08tYIjHuMSmpfsjlZyExZmx2LYTZH6E8_vU7jctcYM"
@@ -92,11 +106,11 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                 <Sparkles className="w-8 h-8 text-amber-300" />
               </div>
               <h2 className="text-2xl md:text-3xl font-normal font-display tracking-tight text-white leading-snug">
-                Внимание к себе – это прекрасно.<br />
-                <span className="text-amber-200">Все начинается здесь.</span>
+                Внимание к себе начинается здесь.<br />
+                <span className="text-amber-200">Спокойно и без лишнего шума.</span>
               </h2>
               <p className="text-sm text-white/40 max-w-[280px]">
-                Войдите в пространство тишины и осознанности, чтобы начать свой путь.
+                Войдите или продолжите как гость, чтобы собрать личный ритм практик и отслеживать состояние.
               </p>
             </div>
 
@@ -144,33 +158,24 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                 <span className="text-amber-200">для точной биометрии</span>
               </h2>
               <p className="text-xs text-white/40 max-w-[280px]">
-                Это необходимо для верного расчёта индекса Сияния и фильтрации специфических медицинских показателей в аналитике.
+                Это помогает корректнее считать Индекс Сияния и фильтровать показатели здоровья в аналитике.
               </p>
 
               <div className="flex flex-col gap-3.5 w-full max-w-[280px] mt-4">
                 <button
-                  onClick={() => {
-                    localStorage.setItem('ritual_user_gender', 'male');
-                    setStep(3);
-                  }}
-                  className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+                  onClick={() => saveGender('male')}
+                  className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98]"
                 >
-                  <span>👨 Мужчина</span>
+                  Мужчина
                 </button>
                 <button
-                  onClick={() => {
-                    localStorage.setItem('ritual_user_gender', 'female');
-                    setStep(3);
-                  }}
-                  className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+                  onClick={() => saveGender('female')}
+                  className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98]"
                 >
-                  <span>👩 Женщина</span>
+                  Женщина
                 </button>
                 <button
-                  onClick={() => {
-                    localStorage.setItem('ritual_user_gender', 'unspecified');
-                    setStep(3);
-                  }}
+                  onClick={() => saveGender('unspecified')}
                   className="w-full h-11 rounded-2xl border border-transparent text-white/50 hover:text-white/80 font-medium text-xs tracking-wider uppercase font-mono transition-all active:scale-[0.98]"
                 >
                   Не указывать
@@ -197,68 +202,36 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
           >
             <div className="pt-6">
               <h2 className="text-xl font-normal text-center text-white leading-relaxed px-4 mb-2">
-                Мир перегружен уведомлениями, суетой и чужими целями.
+                Ritual помогает возвращать контроль над вниманием.
               </h2>
               <p className="text-xs font-mono text-center tracking-widest text-white/40 uppercase mb-8">
-                Ritual создан для возврата контроля
+                практики, голос и биометрия в одном ритме
               </p>
 
-              {/* Bento Feature Cards */}
               <div className="grid grid-cols-1 gap-3.5 mb-6">
-                <div className="p-4 rounded-3xl bg-white/[0.02] border border-white/5 flex gap-4 items-start">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Brain className="w-5 h-5 text-emerald-400" />
+                {[
+                  { icon: Brain, title: 'Сияние', text: 'Ritual считывает состояние тела, чтобы предложить практику, которая нужна именно сейчас.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+                  { icon: Mic, title: 'Голос', text: 'Расскажите, что чувствуете, и Ritual подберет практику под ваш запрос.', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+                  { icon: Compass, title: 'Практики', text: 'Аудио, дыхание, тело и фокус. Сессии от 2 до 20 минут.', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+                  { icon: Award, title: 'Кристалл', text: 'Прогресс обретает форму и отражает ваш путь через практики.', color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
+                ].map(({ icon: Icon, title, text, color, bg, border }) => (
+                  <div key={title} className="p-4 rounded-3xl bg-white/[0.02] border border-white/5 flex gap-4 items-start">
+                    <div className={`w-10 h-10 rounded-2xl ${bg} border ${border} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                      <Icon className={`w-5 h-5 ${color}`} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">{title}</h3>
+                      <p className="text-xs text-white/50 mt-1 leading-relaxed">{text}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">Сияние</h3>
-                    <p className="text-xs text-white/50 mt-1 leading-relaxed">
-                      Ritual считывает состояние твоего тела, чтобы предложить практику, которая нужна именно сейчас.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-3xl bg-white/[0.02] border border-white/5 flex gap-4 items-start">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Mic className="w-5 h-5 text-amber-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">Голос</h3>
-                    <p className="text-xs text-white/50 mt-1 leading-relaxed">
-                      Расскажи, что ты чувствуешь, — и Ritual подберет практику под твой индивидуальный запрос.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-3xl bg-white/[0.02] border border-white/5 flex gap-4 items-start">
-                  <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Compass className="w-5 h-5 text-blue-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">Практики</h3>
-                    <p className="text-xs text-white/50 mt-1 leading-relaxed">
-                      Аудио-, дыхательные, телесные и ментальные практики. Сессии от 2 до 20 минут.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-3xl bg-white/[0.02] border border-white/5 flex gap-4 items-start">
-                  <div className="w-10 h-10 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Award className="w-5 h-5 text-purple-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">Кристалл</h3>
-                    <p className="text-xs text-white/50 mt-1 leading-relaxed">
-                      Прогресс обретает форму. Кристалл отражает твой путь — очищается от практик и сияет ярче.
-                    </p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
             <div className="flex flex-col gap-4 pb-4">
               <div className="flex items-center justify-center gap-2 py-2 px-4 rounded-full bg-amber-400/5 border border-amber-400/10 max-w-xs mx-auto">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                <span className="text-[10px] font-mono tracking-widest text-amber-200/80 uppercase">Основано на научных исследованиях</span>
+                <span className="text-[10px] font-mono tracking-widest text-amber-200/80 uppercase">основано на дневных данных</span>
               </div>
 
               <button
@@ -291,26 +264,26 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                 <span className="text-amber-200">для расчёта Сияния</span>
               </h2>
               <p className="text-xs text-white/40 max-w-[280px]">
-                Сияние рассчитывается на основе данных здоровья. Подключите источник для начала расчёта.
+                Ritual использует только дневные показатели здоровья, чтобы точнее рассчитать Индекс Сияния и подобрать практики под ваше состояние.
               </p>
 
               <div className="flex flex-col gap-3 w-full max-w-[300px] mt-4">
                 <button
-                  onClick={() => connectSource('healthkit')}
+                  onClick={() => connectSource(healthSourceType)}
                   disabled={isHealthSyncing}
-                  className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+                  className="w-full h-13 rounded-2xl bg-white text-black hover:bg-white/90 disabled:opacity-60 disabled:active:scale-100 font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
                 >
-                  <Apple className="w-5 h-5 fill-current" />
-                  <span>Apple HealthKit</span>
+                  {healthSourceType === 'healthkit'
+                    ? <Apple className="w-5 h-5 fill-current" />
+                    : <Smartphone className="w-5 h-5" />}
+                  <span>{isHealthSyncing ? 'Подключение...' : healthConnectLabel}</span>
                 </button>
-                <button
-                  onClick={() => connectSource('healthconnect')}
-                  disabled={isHealthSyncing}
-                  className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
-                >
-                  <Smartphone className="w-5 h-5" />
-                  <span>Подключить Health Connect</span>
-                </button>
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-left">
+                  <p className="text-[10px] font-mono uppercase tracking-widest text-white/35">{healthSourceLabel}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-white/45">
+                    Вы сами выбираете, какие метрики разрешить. Отказ не заблокирует приложение.
+                  </p>
+                </div>
                 <button
                   onClick={() => window.open('https://ritual.store', '_blank')}
                   className="w-full h-13 rounded-2xl bg-[#e8e0d4]/[0.08] border border-[#e8e0d4]/[0.15] hover:bg-[#e8e0d4]/[0.12] text-[#e8e0d4]/80 font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
@@ -350,12 +323,12 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                 <div className="absolute inset-0 rounded-full bg-amber-400/10 blur-xl animate-pulse" />
                 <Sparkles className="w-10 h-10 text-amber-300" />
               </div>
-              <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">твой первый шаг</span>
+              <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">первый шаг</span>
               <h2 className="text-3xl font-normal font-display tracking-tight text-white leading-tight">
                 Путь внимания
               </h2>
               <p className="text-sm text-white/60 max-w-[320px] leading-relaxed">
-                Это трансформирующее путешествие, которое сменит фокус с внешнего на внутренний рост, усовершенствовав ценности и восприятие. Основа для будущих практик. Твой кристалл родится здесь.
+                Ваше пространство практик готово. Начните с короткого ритуала, а данные здоровья можно подключить сейчас или позже.
               </p>
             </div>
 
@@ -370,6 +343,7 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
             </div>
           </motion.div>
         )}
+
         {step === 4 && healthSyncStep && (
           <div className="absolute left-6 right-6 bottom-20 z-20 mx-auto max-w-[300px] rounded-2xl border border-white/[0.05] bg-[#121215]/95 p-3 text-left shadow-2xl">
             <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-white/60 uppercase tracking-wider">
@@ -384,6 +358,7 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
           </div>
         )}
       </AnimatePresence>
+
       <ConnectHealthModal isOpen={showHealthInfoModal} onClose={() => setShowHealthInfoModal(false)} />
     </div>
   );
