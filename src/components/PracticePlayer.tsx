@@ -17,7 +17,7 @@ interface PracticePlayerProps {
   practice: Practice;
   standalone?: StandalonePractice;
   onClose: () => void;
-  onComplete: () => void;
+  onComplete: (elapsedSeconds?: number) => void;
 }
 
 type BreathPhase = 'inhale' | 'hold' | 'exhale' | 'holdEmpty';
@@ -669,6 +669,7 @@ export default function PracticePlayer({
   // Refs
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const breathTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const completionReportedRef = useRef(false);
 
   // ─── Load initial heart rate ───
   useEffect(() => {
@@ -799,6 +800,12 @@ export default function PracticePlayer({
     setIsPlaying(true);
   }, []);
 
+  const reportCompletion = useCallback(() => {
+    if (completionReportedRef.current) return;
+    completionReportedRef.current = true;
+    onComplete(Math.max(1, elapsed));
+  }, [elapsed, onComplete]);
+
   const handleComplete = useCallback(() => {
     // Capture after heart rate
     import('../services/health/manager').then(({ fetchHealthData }) => {
@@ -808,8 +815,8 @@ export default function PracticePlayer({
       }).catch(() => {});
     }).catch(() => {});
     setIsComplete(true);
-    setTimeout(() => onComplete(), 3000);
-  }, [onComplete]);
+    setTimeout(reportCompletion, 3000);
+  }, [reportCompletion]);
 
   const handleMicrocheck = useCallback((response: boolean) => {
     setMicrocheckResponse(response);
@@ -1441,7 +1448,7 @@ export default function PracticePlayer({
               beforeHeartRate={beforeHeartRate}
               afterHeartRate={afterHeartRate}
               isHealthConnected={beforeHeartRate !== null}
-              onGoHome={onComplete}
+              onGoHome={reportCompletion}
             />
           )}
         </AnimatePresence>

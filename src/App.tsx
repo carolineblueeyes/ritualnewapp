@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sun, Activity, Mic, X, Send, User, BookOpen } from 'lucide-react';
 import { Practice, UserStats, ActiveTab } from './types';
@@ -217,6 +217,7 @@ export default function App() {
 
   const [selectedPractice, setSelectedPractice] = useState<Practice | null>(null);
   const [selectedTimelineSlotId, setSelectedTimelineSlotId] = useState<string | null>(null);
+  const practiceCompletionHandledRef = useRef(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
   const [voiceReply, setVoiceReply] = useState('Привет! Как ты себя чувствуешь? Скажи мне, например: "я устал", "хочу спать" или "нужен фокус".');
@@ -454,12 +455,22 @@ export default function App() {
   };
 
   const handleSelectPractice = (practice: Practice, context?: PracticeLaunchContext) => {
+    practiceCompletionHandledRef.current = false;
     setSelectedTimelineSlotId(context?.timelineSlotId ?? null);
     setSelectedPractice(practice);
   };
 
-  const handleCompletePractice = () => {
+  const getCompletedPracticeMinutes = (practice: Practice, elapsedSeconds?: number) => {
+    const seconds = Number(elapsedSeconds);
+    const fallbackSeconds = Number(practice.durationSec) || 60;
+    const durationSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : fallbackSeconds;
+    return Math.max(1, Math.round((durationSeconds / 60) * 10) / 10);
+  };
+
+  const handleCompletePractice = (elapsedSeconds?: number) => {
     if (!selectedPractice) return;
+    if (practiceCompletionHandledRef.current) return;
+    practiceCompletionHandledRef.current = true;
 
     const updatedPractices = practices.map((p) => {
       if (p.id === selectedPractice.id) {
@@ -469,11 +480,12 @@ export default function App() {
     });
     setPractices(updatedPractices);
 
-    const mins = parseInt(selectedPractice.duration) || 5;
+    const mins = getCompletedPracticeMinutes(selectedPractice, elapsedSeconds);
     addPracticeMinutes(mins, selectedPractice.id, selectedPractice.title);
     if (selectedTimelineSlotId) {
       markTimelineSlotCompleted(selectedTimelineSlotId);
     }
+    closeSelectedPractice();
   };
 
   const addPracticeMinutes = (mins: number, practiceId: string, title: string) => {

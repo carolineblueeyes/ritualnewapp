@@ -48,6 +48,12 @@ const CHAPTER_DESCRIPTIONS: Record<ChapterId, string> = {
   yasnost: 'Зеркальная призма. Чистота восприятия и ясность.',
 };
 
+function formatStatMinutes(minutes: number): string {
+  if (!Number.isFinite(minutes)) return '0';
+  const rounded = Math.round(minutes * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPanelProps) {
   const [completedLevelIds, setCompletedLevelIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('ritual_completed_path_levels');
@@ -70,6 +76,7 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
 
   const realStats = deriveRealStats(stats);
   const totalMinutes = realStats.totalMinutes;
+  const totalMinutesLabel = formatStatMinutes(totalMinutes);
   const completedCount = realStats.completedCount;
   const streakDays = realStats.streakDays;
   const hasPracticeHistory = realStats.history.length > 0;
@@ -230,7 +237,7 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
           <div className="flex flex-col gap-1 px-4">
             <span className="text-[9px] text-white/35 font-mono uppercase tracking-widest">ВРЕМЯ</span>
             <div className="flex items-baseline gap-1.5 mt-1">
-              <span className="text-2xl font-bold font-mono text-white tracking-tight">{totalMinutes}</span>
+              <span className="text-2xl font-bold font-mono text-white tracking-tight">{totalMinutesLabel}</span>
               <span className="text-[10px] text-emerald-400 font-mono font-medium">мин.</span>
             </div>
             <span className="text-[9px] text-white/45 font-medium leading-none mt-0.5">выполнено</span>

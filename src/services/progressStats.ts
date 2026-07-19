@@ -43,6 +43,40 @@ function calculateStreakDays(history: UserStats['history']): number {
   return streak;
 }
 
+function normalizeMinutes(minutes: unknown): number {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(1440, Math.round(value * 10) / 10);
+}
+
+function sanitizeHistory(history: UserStats['history']): UserStats['history'] {
+  if (!Array.isArray(history)) return [];
+
+  const seen = new Set<string>();
+
+  return history
+    .map(item => {
+      const date = typeof item?.date === 'string' ? item.date.trim() : '';
+      const practiceId = typeof item?.practiceId === 'string' ? item.practiceId.trim() : '';
+      const practiceTitle = typeof item?.practiceTitle === 'string' ? item.practiceTitle.trim() : '';
+      const minutes = normalizeMinutes(item?.minutes);
+
+      if (!date || !practiceId || minutes <= 0) return null;
+
+      const duplicateKey = `${date}|${practiceId}`;
+      if (seen.has(duplicateKey)) return null;
+      seen.add(duplicateKey);
+
+      return {
+        date,
+        practiceId,
+        practiceTitle,
+        minutes,
+      };
+    })
+    .filter((item): item is UserStats['history'][number] => item !== null);
+}
+
 export function isDemoStats(stats: UserStats): boolean {
   return stats.completedCount === 2
     && stats.streakDays === 4
@@ -55,8 +89,8 @@ export function isDemoStats(stats: UserStats): boolean {
 export function deriveRealStats(stats: UserStats): UserStats {
   if (isDemoStats(stats)) return { ...EMPTY_USER_STATS };
 
-  const history = Array.isArray(stats.history) ? stats.history : [];
-  const totalMinutes = history.reduce((sum, item) => sum + (Number(item.minutes) || 0), 0);
+  const history = sanitizeHistory(stats.history);
+  const totalMinutes = normalizeMinutes(history.reduce((sum, item) => sum + item.minutes, 0));
 
   return {
     ...stats,
