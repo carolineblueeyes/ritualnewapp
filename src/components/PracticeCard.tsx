@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Play, Check, Clock, Heart } from 'lucide-react';
 import { Practice } from '../types';
+import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 
 interface PracticeCardProps {
   practice: Practice;
@@ -49,6 +50,7 @@ export default function PracticeCard({ practice, onClick, index = 0, isFavProp, 
           setIsFavLocal(true);
         }
         localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(favs));
+        requestPrivacySafeSync();
       } catch {}
     }
   };

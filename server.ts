@@ -1,9 +1,11 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import express from 'express';
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+dotenv.config({ path: '.env.server' });
+dotenv.config();
 
 type PushPlatform = 'android' | 'ios' | 'web' | 'unknown';
 
@@ -16,8 +18,7 @@ interface PushInstallation {
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
-const dataDir = path.resolve(process.cwd(), '.data');
-const installationsPath = path.join(dataDir, 'push-installations.json');
+let supabaseAdmin: SupabaseClient | null = null;
 
 app.use(express.json({ limit: '128kb' }));
 app.use((req, res, next) => {
@@ -26,7 +27,7 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   if (req.method === 'OPTIONS') {
     res.sendStatus(204);
@@ -34,22 +35,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-async function readInstallations(): Promise<PushInstallation[]> {
-  try {
-    const content = await fs.readFile(installationsPath, 'utf8');
-    const parsed = JSON.parse(content);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return [];
-    throw error;
-  }
-}
-
-async function writeInstallations(installations: PushInstallation[]): Promise<void> {
-  await fs.mkdir(dataDir, { recursive: true });
-  await fs.writeFile(installationsPath, JSON.stringify(installations, null, 2), 'utf8');
-}
 
 function isPushPlatform(value: unknown): value is PushPlatform {
   return value === 'android' || value === 'ios' || value === 'web' || value === 'unknown';
@@ -80,6 +65,53 @@ function initializeFirebaseAdmin(): void {
   });
 }
 
+function getSupabaseAdmin(): SupabaseClient {
+  if (supabaseAdmin) return supabaseAdmin;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured on the backend');
+  }
+
+  supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  return supabaseAdmin;
+}
+
+async function getAuthenticatedUserId(req: express.Request): Promise<string | null> {
+  const header = req.headers.authorization || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+
+  const { data, error } = await getSupabaseAdmin().auth.getUser(match[1]);
+  if (error || !data.user) return null;
+  return data.user.id;
+}
+
+async function findPushInstallation(installationId: string): Promise<PushInstallation | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from('push_installations')
+    .select('installation_id, token, platform, updated_at')
+    .eq('installation_id', installationId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    installationId: data.installation_id,
+    token: data.token,
+    platform: data.platform,
+    updatedAt: data.updated_at,
+  };
+}
+
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
@@ -87,6 +119,7 @@ app.get('/health', (_req, res) => {
 app.post('/api/notifications/push-token', async (req, res, next) => {
   try {
     const { installationId, token, platform } = req.body ?? {};
+    const userId = await getAuthenticatedUserId(req);
 
     if (typeof installationId !== 'string' || installationId.length < 8) {
       res.status(400).json({ error: 'installationId is required' });
@@ -100,20 +133,22 @@ app.post('/api/notifications/push-token', async (req, res, next) => {
       res.status(400).json({ error: 'platform must be android, ios, web, or unknown' });
       return;
     }
+    if (!userId) {
+      res.status(401).json({ error: 'Supabase user session is required' });
+      return;
+    }
 
-    const installations = await readInstallations();
-    const nextInstallation: PushInstallation = {
-      installationId,
-      token,
-      platform,
-      updatedAt: new Date().toISOString(),
-    };
-    const nextInstallations = [
-      nextInstallation,
-      ...installations.filter((item) => item.installationId !== installationId),
-    ];
+    const { error } = await getSupabaseAdmin()
+      .from('push_installations')
+      .upsert({
+        installation_id: installationId,
+        user_id: userId,
+        token,
+        platform,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'installation_id' });
 
-    await writeInstallations(nextInstallations);
+    if (error) throw error;
     res.json({ ok: true, installationId, platform });
   } catch (error) {
     next(error);
@@ -122,9 +157,19 @@ app.post('/api/notifications/push-token', async (req, res, next) => {
 
 app.delete('/api/notifications/push-token/:installationId', async (req, res, next) => {
   try {
-    const installations = await readInstallations();
-    const nextInstallations = installations.filter((item) => item.installationId !== req.params.installationId);
-    await writeInstallations(nextInstallations);
+    const userId = await getAuthenticatedUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Supabase user session is required' });
+      return;
+    }
+
+    const { error } = await getSupabaseAdmin()
+      .from('push_installations')
+      .delete()
+      .eq('installation_id', req.params.installationId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
     res.json({ ok: true });
   } catch (error) {
     next(error);
@@ -142,8 +187,7 @@ app.post('/api/notifications/test-push', async (req, res, next) => {
     let targetToken = typeof token === 'string' ? token : '';
 
     if (!targetToken && typeof installationId === 'string') {
-      const installations = await readInstallations();
-      targetToken = installations.find((item) => item.installationId === installationId)?.token ?? '';
+      targetToken = (await findPushInstallation(installationId))?.token ?? '';
     }
 
     if (!targetToken) {
@@ -185,6 +229,11 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
   });
 });
 
-app.listen(port, () => {
-  console.log(`[server] Ritual API listening on http://localhost:${port}`);
-});
+export { app };
+export default app;
+
+if (process.env.VERCEL !== '1') {
+  app.listen(port, () => {
+    console.log(`[server] Ritual API listening on http://localhost:${port}`);
+  });
+}

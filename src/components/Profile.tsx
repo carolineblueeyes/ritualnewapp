@@ -13,6 +13,8 @@ import { notificationService, rescheduleAll } from '../services/notifications';
 import { STORAGE_KEYS } from '../services/notifications';
 import SelectModal from './SelectModal';
 import TimePickerModal, { normalizeTime } from './TimePickerModal';
+import { requestPrivacySafeSync } from '../services/supabase/privacySync';
+import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged, signOutAuth } from '../services/supabase/auth';
 
 interface ProfileProps {
   onOpenSubscription: () => void;
@@ -25,7 +27,8 @@ interface ProfileProps {
 }
 
 export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, onSyncMetrics, stats, healthSource, onRefreshHealth }: ProfileProps) {
-  const [userName, setUserName] = useState(() => localStorage.getItem('ritual_user_name') || 'Дмитрий');
+  const [userName, setUserName] = useState(() => localStorage.getItem('ritual_user_name') || 'Гость Ritual');
+  const [authDisplayName, setAuthDisplayName] = useState('Гость Ritual');
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(userName);
 
@@ -72,6 +75,35 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   const showAppleHealth = profilePlatform === 'ios';
 
   useEffect(() => {
+    let mounted = true;
+
+    const applyDisplayName = (displayName: string) => {
+      setAuthDisplayName(displayName);
+      if (!localStorage.getItem('ritual_user_name')) {
+        setUserName(displayName);
+        setTempName(displayName);
+      }
+    };
+
+    getCurrentAuthUser()
+      .then(user => {
+        if (!mounted) return;
+        applyDisplayName(getAuthDisplayName(user));
+      })
+      .catch(() => {});
+
+    const unsubscribe = onAuthChanged(session => {
+      if (!mounted) return;
+      applyDisplayName(getAuthDisplayName(session?.user ?? null));
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     if (isAnyModalOpen) {
       document.body.style.overflow = 'hidden';
     }
@@ -102,6 +134,18 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
       localStorage.setItem('ritual_user_name', trimmed);
     }
     setIsEditingName(false);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOutAuth();
+      localStorage.removeItem('ritual_user_name');
+      setAuthDisplayName('Гость Ritual');
+      setUserName('Гость Ritual');
+      setTempName('Гость Ritual');
+    } catch (error) {
+      console.error('Failed to sign out', error);
+    }
   };
 
   const handleRealBluetoothConnect = async () => {
@@ -249,6 +293,11 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             </>
           )}
         </div>
+        {authDisplayName !== userName && (
+          <p className="text-[10px] text-white/35 z-10 mb-2 max-w-[240px] truncate">
+            Аккаунт: {authDisplayName}
+          </p>
+        )}
 
         {/* Subscription */}
         {isSubscribed ? (
@@ -516,6 +565,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
               }
               setNotificationsEnabled(next);
               localStorage.setItem(STORAGE_KEYS.enabled, next ? 'true' : 'false');
+              requestPrivacySafeSync();
               if (next) {
                 window.setTimeout(() => {
                   rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule notifications:', e));
@@ -604,7 +654,10 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           <Trash2 className="w-3.5 h-3.5" />
           <span>Сбросить прогресс</span>
         </button>
-        <button className="w-full h-11 rounded-xl bg-white/[0.02] border border-white/[0.04] text-white/70 hover:text-white/80 transition-all text-[11px] font-medium flex items-center justify-center gap-2">
+        <button
+          onClick={() => void handleSignOut()}
+          className="w-full h-11 rounded-xl bg-white/[0.02] border border-white/[0.04] text-white/70 hover:text-white/80 transition-all text-[11px] font-medium flex items-center justify-center gap-2"
+        >
           <LogOut className="w-3.5 h-3.5" />
           <span>Выйти</span>
         </button>
@@ -624,6 +677,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             setReminderTime(value);
             localStorage.setItem(STORAGE_KEYS.reminderTime, value);
             setShowTimePicker(false);
+            requestPrivacySafeSync();
             if (notificationsEnabled) {
               rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule reminder time:', e));
             }
@@ -659,6 +713,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
                       setReminderTime(t);
                       localStorage.setItem(STORAGE_KEYS.reminderTime, t);
                       setShowTimePicker(false);
+                      requestPrivacySafeSync();
                       if (notificationsEnabled) {
                         rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule reminder time:', e));
                       }

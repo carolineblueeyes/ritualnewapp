@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import ActivityMap from './ActivityMap';
 import { geolocationService, GeoPoint } from '../services/geolocation';
+import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged } from '../services/supabase/auth';
 
 interface ActivityToolProps {
   onClose: () => void;
@@ -67,6 +68,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
   const [currentPosition, setCurrentPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [routePoints, setRoutePoints] = useState<GeoPoint[]>([]);
   const [heartRate, setHeartRate] = useState(0);
+  const [authDisplayName, setAuthDisplayName] = useState('');
 
   const trackerInterval = useRef<NodeJS.Timeout | null>(null);
   const heartRateInterval = useRef<NodeJS.Timeout | null>(null);
@@ -81,6 +83,25 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
       }
     };
     initGps();
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getCurrentAuthUser()
+      .then(user => {
+        if (mounted) setAuthDisplayName(getAuthDisplayName(user));
+      })
+      .catch(() => {});
+
+    const unsubscribe = onAuthChanged(session => {
+      if (mounted) setAuthDisplayName(getAuthDisplayName(session?.user ?? null));
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -234,15 +255,18 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
     return max + 5;
   }, [selectedType]);
 
-  const userEmail = "dmitriyganushak@gmail.com";
   const userName = useMemo(() => {
-    if (userEmail && userEmail.includes('@')) {
-      const parts = userEmail.split('@')[0];
+    const localName = localStorage.getItem('ritual_user_name') || '';
+    const displayName = localName || authDisplayName;
+
+    if (displayName && displayName.includes('@')) {
+      const parts = displayName.split('@')[0];
       const clean = parts.replace(/[0-9_.]/g, ' ').trim();
-      return clean.charAt(0).toUpperCase() + clean.slice(1);
+      if (clean) return clean.charAt(0).toUpperCase() + clean.slice(1);
     }
-    return 'Сергей Афанасьев';
-  }, [userEmail]);
+
+    return displayName || 'Гость Ritual';
+  }, [authDisplayName]);
 
   const getActivityTitle = () => {
     const now = new Date();

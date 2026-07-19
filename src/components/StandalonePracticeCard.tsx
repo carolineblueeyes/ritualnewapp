@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Play, Clock, Heart } from 'lucide-react';
 import { StandalonePractice } from '../data/practices/types';
 import { STANDALONE_GROUP_COLORS } from '../data/practices';
+import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 
 interface StandalonePracticeCardProps {
   practice: StandalonePractice;
@@ -48,6 +49,7 @@ export default function StandalonePracticeCard({
           setIsFavLocal(true);
         }
         localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(favs));
+        requestPrivacySafeSync();
       } catch {}
     }
   };

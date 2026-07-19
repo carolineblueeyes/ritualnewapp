@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Brain, Mic, Compass, Award, ArrowRight, Apple, Chrome, User, Smartphone, Activity, ShoppingBag } from 'lucide-react';
+import { Sparkles, Brain, Mic, Compass, Award, ArrowRight, Apple, Chrome, User, Smartphone, Activity, ShoppingBag, Mail, Loader2, Shield } from 'lucide-react';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
 import ConnectHealthModal from './ConnectHealthModal';
+import {
+  getCurrentAuthSession,
+  signInWithEmail,
+  signInWithProvider,
+  signUpWithEmail,
+} from '../services/supabase/auth';
+import { ensureAnonymousSession } from '../services/supabase/client';
 
 interface OnboardingProps {
   onComplete: () => void;
@@ -12,6 +19,12 @@ interface OnboardingProps {
 
 export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingProps) {
   const [step, setStep] = useState(0);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authInfo, setAuthInfo] = useState('');
   const [isHealthSyncing, setIsHealthSyncing] = useState(false);
   const [healthSyncProgress, setHealthSyncProgress] = useState(0);
   const [healthSyncStep, setHealthSyncStep] = useState('');
@@ -29,12 +42,84 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
     : healthPlatform === 'android'
       ? 'Подключить Health Connect'
       : 'Подключение в мобильном приложении';
+  const showAppleSignIn = healthPlatform === 'ios';
 
   useEffect(() => {
     if (step !== 0) return;
     const timer = window.setTimeout(() => setStep(1), 1500);
     return () => window.clearTimeout(timer);
   }, [step]);
+
+  useEffect(() => {
+    getCurrentAuthSession()
+      .then(session => {
+        if (session && !session.user.is_anonymous) setStep(2);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleAuthSuccess = () => {
+    setAuthError('');
+    setAuthInfo('');
+    setStep(2);
+  };
+
+  const handleEmailAuth = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || password.length < 6) {
+      setAuthError('Введите email и пароль минимум 6 символов.');
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError('');
+    setAuthInfo('');
+
+    try {
+      const result = authMode === 'signin'
+        ? await signInWithEmail(trimmedEmail, password)
+        : await signUpWithEmail(trimmedEmail, password);
+
+      if (result.session) {
+        handleAuthSuccess();
+        return;
+      }
+
+      setAuthInfo('Аккаунт создан. Проверьте email и подтвердите вход.');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Не удалось войти.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleProviderAuth = async (provider: 'apple' | 'google') => {
+    setAuthLoading(true);
+    setAuthError('');
+    setAuthInfo('');
+
+    try {
+      await signInWithProvider(provider);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Не удалось открыть вход.');
+      setAuthLoading(false);
+    }
+  };
+
+  const handleGuestAuth = async () => {
+    setAuthLoading(true);
+    setAuthError('');
+    setAuthInfo('');
+
+    try {
+      await ensureAnonymousSession();
+      handleAuthSuccess();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Не удалось продолжить как гость.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
 
   const connectSource = async (type: HealthConnectSourceType) => {
     if (!healthService.isNative()) {
@@ -105,9 +190,9 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
+            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full overflow-y-auto hide-scrollbar"
           >
-            <div className="flex-1 flex flex-col items-center justify-center text-center gap-6">
+            <div className="flex flex-col items-center justify-center text-center gap-4 pt-8">
               <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/10 flex items-center justify-center">
                 <Sparkles className="w-8 h-8 text-amber-300" />
               </div>
@@ -120,23 +205,89 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 pb-8">
+            <div className="flex flex-col gap-3 pb-8 pt-8">
+              {showAppleSignIn && (
+                <button
+                  onClick={() => handleProviderAuth('apple')}
+                  disabled={authLoading}
+                  className="w-full h-14 rounded-2xl bg-white text-black font-semibold hover:bg-white/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:active:scale-100"
+                >
+                  <Apple className="w-5 h-5 fill-current" />
+                  <span>Войти через Apple</span>
+                </button>
+              )}
               <button
-                onClick={() => setStep(2)}
-                className="w-full h-14 rounded-2xl bg-white text-black font-semibold hover:bg-white/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
-              >
-                <Apple className="w-5 h-5 fill-current" />
-                <span>Войти через Apple</span>
-              </button>
-              <button
-                onClick={() => setStep(2)}
-                className="w-full h-14 rounded-2xl bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                onClick={() => handleProviderAuth('google')}
+                disabled={authLoading}
+                className="w-full h-14 rounded-2xl bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:active:scale-100"
               >
                 <Chrome className="w-5 h-5" />
                 <span>Войти через Google</span>
               </button>
+
+              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3 flex flex-col gap-3">
+                <div className="grid grid-cols-2 rounded-xl bg-black/20 p-1 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('signin'); setAuthError(''); setAuthInfo(''); }}
+                    className={`h-9 rounded-lg transition-all ${authMode === 'signin' ? 'bg-white text-black' : 'text-white/50 hover:text-white'}`}
+                  >
+                    Вход
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthInfo(''); }}
+                    className={`h-9 rounded-lg transition-all ${authMode === 'signup' ? 'bg-white text-black' : 'text-white/50 hover:text-white'}`}
+                  >
+                    Регистрация
+                  </button>
+                </div>
+
+                <label className="flex items-center gap-2 h-12 rounded-xl bg-black/20 border border-white/10 px-3 focus-within:border-amber-300/40 transition-colors">
+                  <Mail className="w-4 h-4 text-white/35 flex-shrink-0" />
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    inputMode="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="email"
+                    className="w-full bg-transparent outline-none text-sm text-white placeholder:text-white/25"
+                  />
+                </label>
+
+                <label className="flex items-center gap-2 h-12 rounded-xl bg-black/20 border border-white/10 px-3 focus-within:border-amber-300/40 transition-colors">
+                  <Shield className="w-4 h-4 text-white/35 flex-shrink-0" />
+                  <input
+                    type="password"
+                    autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="пароль"
+                    className="w-full bg-transparent outline-none text-sm text-white placeholder:text-white/25"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void handleEmailAuth();
+                    }}
+                  />
+                </label>
+
+                {authError && <p className="text-xs text-red-300/90 leading-relaxed">{authError}</p>}
+                {authInfo && <p className="text-xs text-amber-200/90 leading-relaxed">{authInfo}</p>}
+
+                <button
+                  type="button"
+                  onClick={() => void handleEmailAuth()}
+                  disabled={authLoading}
+                  className="w-full h-12 rounded-xl bg-amber-300 text-black font-semibold hover:bg-amber-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:active:scale-100"
+                >
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  <span>{authMode === 'signin' ? 'Войти по email' : 'Создать аккаунт'}</span>
+                </button>
+              </div>
+
               <button
-                onClick={() => setStep(2)}
+                onClick={() => void handleGuestAuth()}
+                disabled={authLoading}
                 className="text-center text-xs font-mono tracking-widest text-white/40 hover:text-white/60 mt-3 uppercase"
               >
                 продолжить как гость

@@ -28,6 +28,7 @@ import {
 } from '../services/health/types';
 import { notificationService, rescheduleAll } from '../services/notifications';
 import { ARTICLES } from '../data/articles';
+import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 
 interface RitualDashboardProps {
   practices: Practice[];
@@ -169,6 +170,16 @@ export default function RitualDashboard({
     "Сегодня мое внимание направлено на себя"
   ];
 
+  const getPresetIntentionId = (text: string): string | null => {
+    const highIndex = INTENTIONS_HIGH.indexOf(text);
+    if (highIndex >= 0) return `high_${highIndex}`;
+
+    const lowIndex = INTENTIONS_LOW.indexOf(text);
+    if (lowIndex >= 0) return `low_${lowIndex}`;
+
+    return null;
+  };
+
   const [focusDate, setFocusDate] = useState<string>(() => {
     return localStorage.getItem('ritual_day_focus_date') || '';
   });
@@ -261,6 +272,7 @@ export default function RitualDashboard({
     localStorage.setItem('ritual_reflection_reaction', chosenReaction);
 
     setReflection({ answer: choice, reactionText: chosenReaction });
+    requestPrivacySafeSync();
   };
 
   const handleSmartIntention = () => {
@@ -275,7 +287,9 @@ export default function RitualDashboard({
     const todayStr = getTodayDateString();
     localStorage.setItem('ritual_day_focus', chosenText);
     localStorage.setItem('ritual_day_focus_date', todayStr);
+    localStorage.setItem('ritual_day_focus_preset_id', getPresetIntentionId(chosenText) ?? `${isHigh ? 'high' : 'low'}_${randomIndex}`);
     setFocusDate(todayStr);
+    requestPrivacySafeSync();
   };
 
   const [slots, setSlots] = useState<TimelineSlot[]>(() => {
@@ -2405,12 +2419,19 @@ export default function RitualDashboard({
                     const todayStr = getTodayDateString();
                     localStorage.setItem('ritual_day_focus', selectedText);
                     localStorage.setItem('ritual_day_focus_date', todayStr);
+                    const presetId = isCustomInput ? null : getPresetIntentionId(selectedText);
+                    if (presetId) {
+                      localStorage.setItem('ritual_day_focus_preset_id', presetId);
+                    } else {
+                      localStorage.removeItem('ritual_day_focus_preset_id');
+                    }
                     setFocusDate(todayStr);
                     // Clear previous evening reflection when setting new intention
                     localStorage.removeItem('ritual_reflection_date');
                     localStorage.removeItem('ritual_reflection_answer');
                     localStorage.removeItem('ritual_reflection_reaction');
                     setReflection({ answer: null, reactionText: '' });
+                    requestPrivacySafeSync();
                   }
                   setIsIntentionModalOpen(false);
                 }}

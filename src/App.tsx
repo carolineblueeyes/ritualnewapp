@@ -15,6 +15,10 @@ import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { notificationService, rescheduleAll, scheduleSocialInvite, scheduleSubscriptionWarning } from './services/notifications';
 import { deriveRealStats, EMPTY_USER_STATS, parseStoredStats } from './services/progressStats';
+import {
+  PRIVACY_SAFE_SYNC_EVENT,
+  syncPrivacySafeState,
+} from './services/supabase/privacySync';
 
 import BreathingTool from './components/BreathingTool';
 import ActivityTool from './components/ActivityTool';
@@ -220,6 +224,17 @@ export default function App() {
 
   const isAnyOverlayOpen = showSubscription || activeTool !== null || selectedPractice !== null || isVoiceOpen || !onboardingCompleted;
 
+  const syncPrivacySafeStateForCurrentUser = useCallback(async () => {
+    if (!onboardingCompleted) return;
+
+    await syncPrivacySafeState({
+      stats: deriveRealStats(stats),
+      shine,
+      healthSource,
+      onboardingCompleted,
+    });
+  }, [healthSource, onboardingCompleted, shine, stats]);
+
   const syncNotificationSchedule = useCallback(async (includeSocialInvite = false) => {
     if (!onboardingCompleted || !notificationService.isNotificationsEnabled()) return;
     if (!await notificationService.ensureReady()) return;
@@ -395,6 +410,27 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('ritual_is_subscribed', isSubscribed ? 'true' : 'false');
   }, [isSubscribed]);
+
+  useEffect(() => {
+    if (!onboardingCompleted) return;
+
+    const timeoutId = window.setTimeout(() => {
+      syncPrivacySafeStateForCurrentUser()
+        .catch(e => console.warn('[App] Privacy-safe Supabase sync failed:', e));
+    }, 1500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [onboardingCompleted, syncPrivacySafeStateForCurrentUser]);
+
+  useEffect(() => {
+    const handler = () => {
+      syncPrivacySafeStateForCurrentUser()
+        .catch(e => console.warn('[App] Privacy-safe Supabase sync failed:', e));
+    };
+
+    window.addEventListener(PRIVACY_SAFE_SYNC_EVENT, handler);
+    return () => window.removeEventListener(PRIVACY_SAFE_SYNC_EVENT, handler);
+  }, [syncPrivacySafeStateForCurrentUser]);
 
   const getTodayDateKey = () => {
     const d = new Date();

@@ -1,4 +1,5 @@
 import { NotificationPayload, STORAGE_KEYS } from './notification.types';
+import { getSupabaseAccessToken } from '../supabase/client';
 
 let initialized = false;
 let FirebaseMessaging: any = null;
@@ -169,16 +170,23 @@ async function sendPushTokenToBackend(token: string): Promise<PushRegistrationRe
   const apiBaseUrl = getApiBaseUrl();
   const installationId = getInstallationId();
   const platform = getPlatform();
+  const accessToken = await getSupabaseAccessToken();
 
   localStorage.setItem(PUSH_TOKEN_KEY, token);
 
   if (apiBaseUrl === null) {
     return { ok: false, status: 'pushBackendUnavailable', token };
   }
+  if (!accessToken) {
+    return { ok: false, status: 'pushBackendUnavailable', token };
+  }
 
   const response = await fetch(`${apiBaseUrl}/api/notifications/push-token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ installationId, token, platform }),
   });
 

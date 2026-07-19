@@ -6,6 +6,7 @@ import { standaloneData, StandalonePractice, STANDALONE_GROUP_COLORS, STANDALONE
 import PracticePlayer from './PracticePlayer';
 import PracticeCard from './PracticeCard';
 import StandalonePracticeCard from './StandalonePracticeCard';
+import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 
 interface PracticesListProps {
   practices: Practice[];
@@ -79,6 +80,7 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
       }
       localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(favs));
       setFavoriteIds(favs);
+      requestPrivacySafeSync();
     } catch {}
   };
 
