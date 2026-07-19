@@ -4,16 +4,18 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-capacitor-local-notifications.mjs",
+    "patch:local-notifications": "node scripts/patch-capacitor-local-notifications.mjs",
     "dev": "vite --port=3000 --host=0.0.0.0",
     "server:dev": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "cap:build": "vite build && npx cap sync",
-    "cap:ios": "vite build && npx cap sync ios && npx cap open ios",
-    "cap:android": "vite build && npx cap sync android && npx cap open android",
-    "cap:sync": "npx cap sync"
+    "cap:build": "npm run patch:local-notifications && vite build && npx cap sync",
+    "cap:ios": "npm run patch:local-notifications && vite build && npx cap sync ios && npx cap open ios",
+    "cap:android": "npm run patch:local-notifications && vite build && npx cap sync android && npx cap open android",
+    "cap:sync": "npm run patch:local-notifications && npx cap sync"
   },
   "dependencies": {
     "@capacitor-firebase/messaging": "^8.3.0",

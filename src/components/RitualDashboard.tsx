@@ -32,7 +32,7 @@ import { ARTICLES } from '../data/articles';
 interface RitualDashboardProps {
   practices: Practice[];
   stats: UserStats;
-  onSelectPractice: (practice: Practice) => void;
+  onSelectPractice: (practice: Practice, context?: { timelineSlotId?: string }) => void;
   shine?: ShineBreakdown;
   healthSource?: DataSource;
   healthMetrics?: HealthMetrics;
@@ -52,6 +52,8 @@ const DEFAULT_SLOTS: TimelineSlot[] = [
   { id: '2', time: '12:30', practiceId: 'focus' },
   { id: '4', time: '20:30', practiceId: 'end-day' }
 ];
+
+const SLOT_ACTIVE_GRACE_MINUTES = 60;
 
 export default function RitualDashboard({
   practices,
@@ -281,7 +283,7 @@ export default function RitualDashboard({
     return saved ? JSON.parse(saved) : DEFAULT_SLOTS;
   });
 
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = getTodayDateString();
 
   const [completedSlots, setCompletedSlots] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem(`ritual_completed_slots_${todayKey}`);
@@ -299,30 +301,45 @@ export default function RitualDashboard({
     return (h || 0) * 60 + (m || 0);
   };
 
-  const getSlotStatus = (slot: TimelineSlot): 'completed' | 'skipped' | 'active' | 'pending' => {
+  const getCurrentMinutes = () => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  };
+
+  const getPracticeDurationMinutes = (practice?: Practice) => {
+    if (practice?.durationSec) return Math.ceil(practice.durationSec / 60);
+    const parsed = parseInt(practice?.duration || '', 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const getSlotActiveUntil = (slot: TimelineSlot) => {
     const assignedPractice = practices.find(p => p.id === slot.practiceId);
-    if (completedSlots[slot.id] || assignedPractice?.completed) return 'completed';
-    const slotIdx = slots.findIndex(s => s.id === slot.id);
-    const activeIdx = slots.findIndex(s => s.id === activeSlotId);
-    if (slotIdx < activeIdx) return 'skipped';
-    if (slot.id === activeSlotId) return 'active';
-    return 'pending';
+    const practiceDuration = getPracticeDurationMinutes(assignedPractice);
+    return getMinutes(slot.time) + Math.max(practiceDuration, SLOT_ACTIVE_GRACE_MINUTES);
+  };
+
+  const getSlotStatus = (slot: TimelineSlot): 'completed' | 'skipped' | 'active' | 'pending' => {
+    if (completedSlots[slot.id]) return 'completed';
+    const currentMinutes = getCurrentMinutes();
+    const slotStart = getMinutes(slot.time);
+    if (currentMinutes < slotStart) return 'pending';
+    if (currentMinutes <= getSlotActiveUntil(slot)) return 'active';
+    return 'skipped';
   };
 
   useEffect(() => {
     const updateActiveSlot = () => {
       if (slots.length === 0) return;
-      const now = new Date();
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const currentMinutes = getCurrentMinutes();
 
       let foundId = '';
-      for (let i = slots.length - 1; i >= 0; i--) {
-        if (currentMinutes >= getMinutes(slots[i].time)) {
-          foundId = slots[i].id;
+      const sortedSlots = [...slots].sort((a, b) => a.time.localeCompare(b.time));
+      for (const slot of sortedSlots) {
+        if (currentMinutes >= getMinutes(slot.time) && currentMinutes <= getSlotActiveUntil(slot)) {
+          foundId = slot.id;
           break;
         }
       }
-      if (!foundId) foundId = slots[0].id;
 
       setActiveSlotId(foundId);
     };
@@ -840,10 +857,13 @@ export default function RitualDashboard({
               <span className="text-[11px] text-white/60 tracking-wider font-semibold px-1">Течение дня</span>
               <motion.div layout className="relative flex flex-col gap-1.5">
                 {(() => {
-                  const now = new Date();
-                  const currentMin = now.getHours() * 60 + now.getMinutes();
-                  const firstMin = getMinutes(slots[0]?.time || '00:00');
-                  const lastMin = getMinutes(slots[slots.length - 1]?.time || '23:59');
+                  const visibleSlots = slots
+                    .filter((slot) => slot.practiceId !== '')
+                    .sort((a, b) => a.time.localeCompare(b.time));
+                  const currentMin = getCurrentMinutes();
+                  const firstMin = getMinutes(visibleSlots[0]?.time || '00:00');
+                  const lastSlot = visibleSlots[visibleSlots.length - 1];
+                  const lastMin = lastSlot ? getSlotActiveUntil(lastSlot) : 1439;
                   const totalRange = lastMin - firstMin || 1;
                   const progress = Math.max(0, Math.min(1, (currentMin - firstMin) / totalRange));
                   return (
@@ -864,6 +884,7 @@ export default function RitualDashboard({
 
                 {slots
                   .filter((slot) => slot.practiceId !== '')
+                  .sort((a, b) => a.time.localeCompare(b.time))
                   .map((slot) => {
                     const assignedPractice = practices.find(p => p.id === slot.practiceId);
                     const isEditing = editingSlotId === slot.id;
@@ -968,7 +989,7 @@ export default function RitualDashboard({
                                         )}
                                       </div>
                                       <span 
-                                        onClick={() => canInteract && onSelectPractice(assignedPractice)}
+                                        onClick={() => canInteract && onSelectPractice(assignedPractice, { timelineSlotId: slot.id })}
                                         className={`text-[13px] font-semibold mt-1 tracking-wide leading-snug ${
                                           canInteract ? 'text-white/95 hover:text-[#34d399] cursor-pointer transition-colors' :
                                           isSkipped ? 'text-white/25' :
@@ -1730,12 +1751,16 @@ export default function RitualDashboard({
                   // Coordinates for SVG lines
                   const width = 300;
                   const height = 120;
+                  const chartLeft = 20;
+                  const chartRight = 260;
+                  const chartWidth = chartRight - chartLeft;
+                  const axisLabelX = width - 12;
                   const daysCount = activeAnalyticsList.length;
 
                   const points = activeAnalyticsList.map((dVal, i) => {
-                    const x = daysCount === 7 
-                      ? 20 + i * (260 / 6)
-                      : 10 + i * (280 / (daysCount - 1));
+                    const x = daysCount > 1
+                      ? chartLeft + i * (chartWidth / (daysCount - 1))
+                      : chartLeft + chartWidth / 2;
                     const clampedScore = dVal.shineScore === null ? null : Math.max(40, Math.min(100, dVal.shineScore));
                     const y = clampedScore === null ? 95 : 95 - ((clampedScore - 40) / 60) * 80;
                     return { x, y, ...dVal, originalIndex: i };
@@ -1825,18 +1850,19 @@ export default function RitualDashboard({
                               return (
                                 <g key={gridVal} className="opacity-[0.1]">
                                   <line 
-                                    x1="5" 
+                                    x1={chartLeft - 6}
                                     y1={yCoord} 
-                                    x2={width - 5} 
+                                    x2={chartRight + 4}
                                     y2={yCoord} 
                                     stroke="rgba(255,255,255,0.4)" 
                                     strokeWidth="0.5" 
                                     strokeDasharray="2,2"
                                   />
                                   <text 
-                                    x={width - 15} 
+                                    x={axisLabelX}
                                     y={yCoord - 3} 
                                     className="text-[7px] font-mono fill-white text-right"
+                                    textAnchor="end"
                                   >
                                     {gridVal}%
                                   </text>
@@ -1994,9 +2020,9 @@ export default function RitualDashboard({
 
                             {/* Clickable Overlay Columns across full SVG height */}
                             {points.map((p) => {
-                              const colWidth = daysCount === 7 
-                                ? (260 / 6)
-                                : (280 / (daysCount - 1));
+                              const colWidth = daysCount > 1
+                                ? chartWidth / (daysCount - 1)
+                                : chartWidth;
                               return (
                                 <rect 
                                   key={`click-${p.dateStr}`}

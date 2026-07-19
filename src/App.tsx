@@ -21,6 +21,10 @@ import ActivityTool from './components/ActivityTool';
 import FocusTool from './components/FocusTool';
 import AtmosphereTool from './components/AtmosphereTool';
 
+interface PracticeLaunchContext {
+  timelineSlotId?: string;
+}
+
 const INITIAL_PRACTICES: Practice[] = [
   {
     id: 'start-day',
@@ -208,6 +212,7 @@ export default function App() {
   const [activeTool, setActiveTool] = useState<'breathing' | 'activity' | 'focus' | 'atmosphere' | null>(null);
 
   const [selectedPractice, setSelectedPractice] = useState<Practice | null>(null);
+  const [selectedTimelineSlotId, setSelectedTimelineSlotId] = useState<string | null>(null);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
   const [voiceReply, setVoiceReply] = useState('Привет! Как ты себя чувствуешь? Скажи мне, например: "я устал", "хочу спать" или "нужен фокус".');
@@ -283,6 +288,7 @@ export default function App() {
             const savedPractices = JSON.parse(localStorage.getItem('ritual_practices') || '[]');
             const found = savedPractices.find((p: any) => p.id === practiceId);
             if (found) {
+              setSelectedTimelineSlotId(null);
               setSelectedPractice(found);
               return;
             }
@@ -360,6 +366,7 @@ export default function App() {
       } else if (activeTool !== null) {
         setActiveTool(null);
       } else if (selectedPractice !== null) {
+        setSelectedTimelineSlotId(null);
         setSelectedPractice(null);
       } else if (isVoiceOpen) {
         setIsVoiceOpen(false);
@@ -389,7 +396,29 @@ export default function App() {
     localStorage.setItem('ritual_is_subscribed', isSubscribed ? 'true' : 'false');
   }, [isSubscribed]);
 
-  const handleSelectPractice = (practice: Practice) => {
+  const getTodayDateKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const markTimelineSlotCompleted = (slotId: string) => {
+    const storageKey = `ritual_completed_slots_${getTodayDateKey()}`;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      const completedSlots = saved ? JSON.parse(saved) : {};
+      localStorage.setItem(storageKey, JSON.stringify({ ...completedSlots, [slotId]: true }));
+    } catch {
+      localStorage.setItem(storageKey, JSON.stringify({ [slotId]: true }));
+    }
+  };
+
+  const closeSelectedPractice = () => {
+    setSelectedTimelineSlotId(null);
+    setSelectedPractice(null);
+  };
+
+  const handleSelectPractice = (practice: Practice, context?: PracticeLaunchContext) => {
+    setSelectedTimelineSlotId(context?.timelineSlotId ?? null);
     setSelectedPractice(practice);
   };
 
@@ -406,6 +435,9 @@ export default function App() {
 
     const mins = parseInt(selectedPractice.duration) || 5;
     addPracticeMinutes(mins, selectedPractice.id, selectedPractice.title);
+    if (selectedTimelineSlotId) {
+      markTimelineSlotCompleted(selectedTimelineSlotId);
+    }
   };
 
   const addPracticeMinutes = (mins: number, practiceId: string, title: string) => {
@@ -491,155 +523,159 @@ export default function App() {
       {/* Subtle background */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-black" />
 
-      {/* Top header */}
-      <header className="relative z-10 w-full max-w-md mx-auto pt-[calc(env(safe-area-inset-top)+1.5rem)] px-6 flex justify-between items-center">
-        <button 
-          onClick={() => switchTab('profile')}
-          className="w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.1] transition-colors"
-        >
-          <User className="w-4 h-4 text-white/40" strokeWidth={2} />
-        </button>
-        <button 
-          onClick={() => setShowSubscription(true)}
-          className={`text-[11px] font-medium tracking-wide transition-colors ${
-            isSubscribed ? 'text-white/60 hover:text-white/80' : 'text-amber-400 hover:text-amber-300'
-          }`}
-        >
-          {isSubscribed ? 'Plus' : 'Lite →'}
-        </button>
-      </header>
-
-      {/* Main content */}
-      <main className="relative flex-1 w-full max-w-md mx-auto px-5 pt-4 pb-24">
-        <AnimatePresence mode="wait">
-          {activeTab === 'today' && (
-            <motion.div
-              key="today"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+      {!selectedPractice && (
+        <>
+          {/* Top header */}
+          <header className="relative z-10 w-full max-w-md mx-auto pt-[calc(env(safe-area-inset-top)+1.5rem)] px-6 flex justify-between items-center">
+            <button 
+              onClick={() => switchTab('profile')}
+              className="w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.1] transition-colors"
             >
-              <RitualDashboard 
-                practices={practices}
-                stats={stats}
-                onSelectPractice={handleSelectPractice}
-                shine={shine}
-                healthSource={healthSource}
-                healthMetrics={healthMetrics}
-                historyByMetric={historyByMetric}
-                availabilityByMetric={availabilityByMetric}
-                onRefreshHealth={refreshHealth}
-              />
-            </motion.div>
-          )}
-
-          {activeTab === 'practices' && (
-            <motion.div
-              key="practices"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+              <User className="w-4 h-4 text-white/40" strokeWidth={2} />
+            </button>
+            <button 
+              onClick={() => setShowSubscription(true)}
+              className={`text-[11px] font-medium tracking-wide transition-colors ${
+                isSubscribed ? 'text-white/60 hover:text-white/80' : 'text-amber-400 hover:text-amber-300'
+              }`}
             >
-              <PracticesList 
-                practices={practices}
-                onSelectPractice={handleSelectPractice}
-                onSelectTool={(toolId) => setActiveTool(toolId)}
-              />
-            </motion.div>
-          )}
+              {isSubscribed ? 'Plus' : 'Lite →'}
+            </button>
+          </header>
 
-          {activeTab === 'progress' && (
-            <motion.div
-              key="progress"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+          {/* Main content */}
+          <main className="relative flex-1 w-full max-w-md mx-auto px-5 pt-4 pb-24">
+            <AnimatePresence mode="wait">
+              {activeTab === 'today' && (
+                <motion.div
+                  key="today"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <RitualDashboard 
+                    practices={practices}
+                    stats={stats}
+                    onSelectPractice={handleSelectPractice}
+                    shine={shine}
+                    healthSource={healthSource}
+                    healthMetrics={healthMetrics}
+                    historyByMetric={historyByMetric}
+                    availabilityByMetric={availabilityByMetric}
+                    onRefreshHealth={refreshHealth}
+                  />
+                </motion.div>
+              )}
+
+              {activeTab === 'practices' && (
+                <motion.div
+                  key="practices"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <PracticesList 
+                    practices={practices}
+                    onSelectPractice={handleSelectPractice}
+                    onSelectTool={(toolId) => setActiveTool(toolId)}
+                  />
+                </motion.div>
+              )}
+
+              {activeTab === 'progress' && (
+                <motion.div
+                  key="progress"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <StatsPanel 
+                    stats={stats}
+                    practices={practices}
+                    onAddMinutes={(mins) => addPracticeMinutes(mins, 'path-attention', 'Путь Внимания')}
+                  />
+                </motion.div>
+              )}
+
+              {activeTab === 'profile' && (
+                <motion.div
+                  key="profile"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <Profile 
+                    isSubscribed={isSubscribed}
+                    onOpenSubscription={() => setShowSubscription(true)}
+                    onResetAll={handleResetAll}
+                    stats={stats}
+                    healthSource={healthSource}
+                    onRefreshHealth={refreshHealth}
+                    onSyncMetrics={(newMetrics) => {
+                      refreshHealth();
+                    }}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </main>
+
+          {/* Bottom navigation */}
+          <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] left-1/2 -translate-x-1/2 w-full max-w-[340px] px-4 z-[15] flex items-center gap-2">
+            {/* Main nav pill */}
+            <nav className="flex items-center h-[52px] flex-1 px-2 bg-[#111114]/90 backdrop-blur-xl rounded-full border border-white/[0.06]">
+              
+              <button 
+                onClick={() => switchTab('today')}
+                className={`flex flex-col items-center justify-center gap-[2px] flex-1 transition-colors duration-300 ${
+                  activeTab === 'today' ? 'text-white' : 'text-white/60 hover:text-white/80'
+                }`}
+              >
+                <Sun className="w-[17px] h-[17px]" strokeWidth={2.5} />
+                <span className="text-[9px] font-medium tracking-wider">Сегодня</span>
+              </button>
+
+              <button 
+                onClick={() => switchTab('practices')}
+                className={`flex flex-col items-center justify-center gap-[2px] flex-1 transition-colors duration-300 ${
+                  activeTab === 'practices' ? 'text-white' : 'text-white/60 hover:text-white/80'
+                }`}
+              >
+                <BookOpen className="w-[17px] h-[17px]" strokeWidth={2.5} />
+                <span className="text-[9px] font-medium tracking-wider">Практики</span>
+              </button>
+
+              <button 
+                onClick={() => switchTab('progress')}
+                className={`flex flex-col items-center justify-center gap-[2px] flex-1 transition-colors duration-300 ${
+                  activeTab === 'progress' ? 'text-white' : 'text-white/60 hover:text-white/80'
+                }`}
+              >
+                <Activity className="w-[17px] h-[17px]" strokeWidth={2.5} />
+                <span className="text-[9px] font-medium tracking-wider">Прогресс</span>
+              </button>
+            </nav>
+
+            {/* Mic pill — separate */}
+            <button 
+              onClick={() => setIsVoiceOpen(true)}
+              className="flex items-center justify-center w-[52px] h-[52px] rounded-full bg-white/[0.08] border border-white/[0.06] text-white/70 hover:bg-white/[0.12] hover:text-white active:scale-95 transition-all flex-shrink-0"
             >
-              <StatsPanel 
-                stats={stats}
-                practices={practices}
-                onAddMinutes={(mins) => addPracticeMinutes(mins, 'path-attention', 'Путь Внимания')}
-              />
-            </motion.div>
-          )}
-
-          {activeTab === 'profile' && (
-            <motion.div
-              key="profile"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Profile 
-                isSubscribed={isSubscribed}
-                onOpenSubscription={() => setShowSubscription(true)}
-                onResetAll={handleResetAll}
-                stats={stats}
-                healthSource={healthSource}
-                onRefreshHealth={refreshHealth}
-                onSyncMetrics={(newMetrics) => {
-                  refreshHealth();
-                }}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-
-      {/* Bottom navigation */}
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] left-1/2 -translate-x-1/2 w-full max-w-[340px] px-4 z-[15] flex items-center gap-2">
-        {/* Main nav pill */}
-        <nav className="flex items-center h-[52px] flex-1 px-2 bg-[#111114]/90 backdrop-blur-xl rounded-full border border-white/[0.06]">
-          
-          <button 
-            onClick={() => switchTab('today')}
-            className={`flex flex-col items-center justify-center gap-[2px] flex-1 transition-colors duration-300 ${
-              activeTab === 'today' ? 'text-white' : 'text-white/60 hover:text-white/80'
-            }`}
-          >
-            <Sun className="w-[17px] h-[17px]" strokeWidth={2.5} />
-            <span className="text-[9px] font-medium tracking-wider">Сегодня</span>
-          </button>
-
-          <button 
-            onClick={() => switchTab('practices')}
-            className={`flex flex-col items-center justify-center gap-[2px] flex-1 transition-colors duration-300 ${
-              activeTab === 'practices' ? 'text-white' : 'text-white/60 hover:text-white/80'
-            }`}
-          >
-            <BookOpen className="w-[17px] h-[17px]" strokeWidth={2.5} />
-            <span className="text-[9px] font-medium tracking-wider">Практики</span>
-          </button>
-
-          <button 
-            onClick={() => switchTab('progress')}
-            className={`flex flex-col items-center justify-center gap-[2px] flex-1 transition-colors duration-300 ${
-              activeTab === 'progress' ? 'text-white' : 'text-white/60 hover:text-white/80'
-            }`}
-          >
-            <Activity className="w-[17px] h-[17px]" strokeWidth={2.5} />
-            <span className="text-[9px] font-medium tracking-wider">Прогресс</span>
-          </button>
-        </nav>
-
-        {/* Mic pill — separate */}
-        <button 
-          onClick={() => setIsVoiceOpen(true)}
-          className="flex items-center justify-center w-[52px] h-[52px] rounded-full bg-white/[0.08] border border-white/[0.06] text-white/70 hover:bg-white/[0.12] hover:text-white active:scale-95 transition-all flex-shrink-0"
-        >
-          <Mic className="w-[18px] h-[18px]" strokeWidth={2.5} />
-        </button>
-      </div>
+              <Mic className="w-[18px] h-[18px]" strokeWidth={2.5} />
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Practice player overlay */}
       {selectedPractice && (
         <PracticePlayer
           practice={selectedPractice}
-          onClose={() => setSelectedPractice(null)}
+          onClose={closeSelectedPractice}
           onComplete={handleCompletePractice}
         />
       )}

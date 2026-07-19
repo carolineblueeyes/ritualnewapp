@@ -109,6 +109,8 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
 
   return (
     <div className="w-full max-w-md mx-auto flex flex-col gap-5 select-none pb-24">
+      {!activeStandalone && (
+        <>
 
       {/* SECTION: ИНСТРУМЕНТЫ */}
       <div className="flex flex-col gap-3">
@@ -270,6 +272,8 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
           Судя по активности за неделю, упражнение <span className="text-white/55">Успокоиться</span> поможет снизить напряжение перед сном.
         </p>
       </motion.div>
+        </>
+      )}
 
       {/* Active Standalone Practice Modal */}
       <AnimatePresence>

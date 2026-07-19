@@ -887,33 +887,41 @@ export default function PracticePlayer({
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
         <motion.div
           animate={{
-            scale: activeStep?.type === 'breathing' ? [1, 1.25, 1] : [1, 1.12, 1],
-            opacity: activeStep?.type === 'breathing' ? [0.22, 0.38, 0.22] : [0.12, 0.18, 0.12],
+            scale: activeStep?.type === 'breathing' ? [1, 1.08, 1] : [1, 1.04, 1],
+            opacity: activeStep?.type === 'breathing' ? [0.12, 0.2, 0.12] : [0.08, 0.13, 0.08],
           }}
           transition={{
             duration: activeStep?.type === 'breathing' 
               ? (activeStep.breathPattern?.inhale || 4) + (activeStep.breathPattern?.exhale || 4) + (activeStep.breathPattern?.hold || 0) + (activeStep.breathPattern?.holdEmpty || 0)
-              : 12,
+              : 18,
             repeat: Infinity,
             ease: 'easeInOut',
           }}
-          className="absolute top-[15%] left-[5%] right-[5%] aspect-square rounded-full blur-[120px] mix-blend-screen"
-          style={{ backgroundColor: color }}
+          className="absolute top-[18%] left-[12%] right-[12%] aspect-square rounded-full blur-[72px]"
+          style={{
+            backgroundColor: color,
+            transform: 'translateZ(0)',
+            willChange: 'transform, opacity',
+          }}
         />
         <motion.div
           animate={{
-            x: [0, 40, -20, 0],
-            y: [0, -30, 30, 0],
-            scale: [0.95, 1.15, 0.95, 0.95],
-            opacity: [0.05, 0.12, 0.07, 0.05],
+            x: [0, 18, -10, 0],
+            y: [0, -14, 12, 0],
+            scale: [0.96, 1.06, 0.98, 0.96],
+            opacity: [0.04, 0.08, 0.05, 0.04],
           }}
           transition={{
-            duration: 22,
+            duration: 30,
             repeat: Infinity,
             ease: 'easeInOut',
           }}
-          className="absolute -top-10 -right-10 w-96 h-96 rounded-full blur-[140px] mix-blend-screen"
-          style={{ backgroundColor: color }}
+          className="absolute top-0 right-0 w-72 h-72 rounded-full blur-[80px]"
+          style={{
+            backgroundColor: color,
+            transform: 'translateZ(0)',
+            willChange: 'transform, opacity',
+          }}
         />
       </div>
 
@@ -1164,20 +1172,16 @@ export default function PracticePlayer({
                     ))}
 
                     {/* Breathing Crystal */}
-                    <motion.div
-                      animate={{ scale: getStepBreathingScale() }}
-                      transition={{ type: 'spring', stiffness: 75, damping: 18 }}
-                      className="absolute z-10"
-                    >
+                    <div className="absolute z-10">
                       <PracticeCrystal
                         facets={crystalState.facets}
                         color={crystalState.color}
                         fogPercent={crystalState.fogPercent}
-                        glowIntensity={crystalState.glowIntensity * (breathState.phase === 'inhale' || breathState.phase === 'hold' ? 1.25 : 0.6)}
-                        rotationSpeed={crystalState.rotationSpeed * (breathState.phase === 'inhale' ? 1.4 : 0.7)}
+                        glowIntensity={crystalState.glowIntensity * (breathState.phase === 'inhale' || breathState.phase === 'hold' ? 0.95 : 0.55)}
+                        rotationSpeed={crystalState.rotationSpeed * 0.65}
                         isPulsing={true}
                       />
-                    </motion.div>
+                    </div>
 
                     {/* Floating Timer inside the central area */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
@@ -1188,7 +1192,7 @@ export default function PracticePlayer({
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 1.15 }}
                           transition={{ duration: 0.25 }}
-                          className="text-4xl font-extralight font-mono text-white/95 tracking-tighter drop-shadow-lg"
+                          className="text-4xl font-extralight font-mono text-white/95 tracking-tighter"
                         >
                           {breathState.secondsLeft}
                         </motion.span>
@@ -1258,16 +1262,10 @@ export default function PracticePlayer({
                   transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                   className="flex flex-col items-center justify-center w-full gap-6 relative"
                 >
-                  {/* Soft background rotating crystal decoration */}
-                  <div className="absolute opacity-[0.03] pointer-events-none scale-75 -top-4 z-0">
-                    <PracticeCrystal
-                      facets={crystalState.facets}
-                      color={crystalState.color}
-                      fogPercent={crystalState.fogPercent}
-                      glowIntensity={0.2}
-                      rotationSpeed={crystalState.rotationSpeed * 0.2}
-                    />
-                  </div>
+                  <div
+                    className="absolute pointer-events-none -top-2 z-0 h-44 w-44 rounded-full blur-[36px] opacity-[0.05]"
+                    style={{ backgroundColor: crystalState.color }}
+                  />
 
                   {activeStep.text && (
                     <h3 className="text-base font-light text-white/80 text-center tracking-tight leading-relaxed max-w-[280px] z-10 px-4">
@@ -1311,7 +1309,7 @@ export default function PracticePlayer({
                   </div>
 
                   {/* Glassmorphic panel */}
-                  <div className="bg-white/[0.015] backdrop-blur-[35px] border border-white/[0.05] rounded-3xl p-6 w-full relative overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.3)] text-left">
+                  <div className="bg-white/[0.02] backdrop-blur-md border border-white/[0.05] rounded-3xl p-6 w-full relative overflow-hidden shadow-[0_16px_36px_rgba(0,0,0,0.24)] text-left">
                     <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent" />
                     <span className="text-[10px] font-mono tracking-[0.25em] text-white/45 uppercase block mb-4 font-semibold text-center">
                       {activeStep.subtitle || 'Научный инсайт'}
@@ -1343,7 +1341,7 @@ export default function PracticePlayer({
                     />
                   </div>
 
-                  <div className="bg-white/[0.015] backdrop-blur-[35px] border border-white/[0.05] rounded-3xl p-6 w-full shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden">
+                  <div className="bg-white/[0.02] backdrop-blur-md border border-white/[0.05] rounded-3xl p-6 w-full shadow-[0_16px_36px_rgba(0,0,0,0.24)] relative overflow-hidden">
                     <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent" />
                     
                     <p className="text-md font-light text-white/80 leading-relaxed text-center mb-6 px-2">
