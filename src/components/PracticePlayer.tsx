@@ -888,7 +888,7 @@ export default function PracticePlayer({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-[#050508] text-white flex flex-col select-none overflow-hidden"
+      className="fixed inset-0 z-50 bg-[#050508] text-white flex flex-col select-none"
     >
       {/* Immersive Cosmic Aurora / Nebula Backdrops */}
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">

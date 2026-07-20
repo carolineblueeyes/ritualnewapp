@@ -20,13 +20,14 @@ interface ProfileProps {
   onOpenSubscription: () => void;
   isSubscribed: boolean;
   onResetAll: () => void;
+  onSignOut?: () => void;
   onSyncMetrics?: (metrics: { hrv: number; sleep: number; activity: number; pulse: number }) => void;
   stats?: any;
   healthSource?: 'none' | 'ring' | 'healthapp';
   onRefreshHealth?: () => void;
 }
 
-export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, onSyncMetrics, stats, healthSource, onRefreshHealth }: ProfileProps) {
+export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, onSignOut, onSyncMetrics, stats, healthSource, onRefreshHealth }: ProfileProps) {
   const [userName, setUserName] = useState(() => localStorage.getItem('ritual_user_name') || 'Гость Ritual');
   const [authDisplayName, setAuthDisplayName] = useState('Гость Ritual');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -143,6 +144,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
       setAuthDisplayName('Гость Ritual');
       setUserName('Гость Ritual');
       setTempName('Гость Ritual');
+      onSignOut?.();
     } catch (error) {
       console.error('Failed to sign out', error);
     }

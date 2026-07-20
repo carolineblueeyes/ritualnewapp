@@ -35,8 +35,8 @@ const INITIAL_PRACTICES: Practice[] = [
     title: 'Начать день',
     mood: 'Энергия',
     iconName: 'Sun',
-    duration: '5 мин',
-    durationSec: 300,
+    duration: '2 мин',
+    durationSec: 135,
     color: '#E67E22',
     accentClass: 'text-amber-500',
     bgGlowClass: 'from-amber-500/20',
@@ -54,8 +54,8 @@ const INITIAL_PRACTICES: Practice[] = [
     title: 'Перед важным моментом',
     mood: 'Уверенность',
     iconName: 'Shield',
-    duration: '4 мин',
-    durationSec: 240,
+    duration: '3 мин',
+    durationSec: 160,
     color: '#D4AF37',
     accentClass: 'text-amber-400',
     bgGlowClass: 'from-amber-400/20',
@@ -73,8 +73,8 @@ const INITIAL_PRACTICES: Practice[] = [
     title: 'Успокоиться',
     mood: 'Покой',
     iconName: 'Wind',
-    duration: '8 мин',
-    durationSec: 480,
+    duration: '3 мин',
+    durationSec: 170,
     color: '#7A9BBA',
     accentClass: 'text-blue-400',
     bgGlowClass: 'from-blue-400/20',
@@ -92,8 +92,8 @@ const INITIAL_PRACTICES: Practice[] = [
     title: 'Пауза',
     mood: 'Баланс',
     iconName: 'Coffee',
-    duration: '3 мин',
-    durationSec: 180,
+    duration: '2 мин',
+    durationSec: 95,
     color: '#9E9E9E',
     accentClass: 'text-slate-400',
     bgGlowClass: 'from-slate-400/20',
@@ -111,8 +111,8 @@ const INITIAL_PRACTICES: Practice[] = [
     title: 'Сосредоточиться',
     mood: 'Фокус',
     iconName: 'Brain',
-    duration: '10 мин',
-    durationSec: 600,
+    duration: '3 мин',
+    durationSec: 152,
     color: '#A8D5E5',
     accentClass: 'text-sky-300',
     bgGlowClass: 'from-sky-300/20',
@@ -130,8 +130,8 @@ const INITIAL_PRACTICES: Practice[] = [
     title: 'Восстановиться',
     mood: 'Сила',
     iconName: 'Zap',
-    duration: '7 мин',
-    durationSec: 420,
+    duration: '3 мин',
+    durationSec: 152,
     color: '#E6B85C',
     accentClass: 'text-yellow-500',
     bgGlowClass: 'from-yellow-500/20',
@@ -149,8 +149,8 @@ const INITIAL_PRACTICES: Practice[] = [
     title: 'Закончить день',
     mood: 'Сон',
     iconName: 'Moon',
-    duration: '12 мин',
-    durationSec: 720,
+    duration: '3 мин',
+    durationSec: 190,
     color: '#8A2BE2',
     accentClass: 'text-purple-400',
     bgGlowClass: 'from-purple-400/20',
@@ -187,15 +187,20 @@ export default function App() {
     }
   };
   const [practices, setPractices] = useState<Practice[]>(() => {
-    const saved = localStorage.getItem('ritual_practices');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.length === INITIAL_PRACTICES.length && parsed[0].id === INITIAL_PRACTICES[0].id && parsed.every((p: any) => p.rituals)) {
-          return parsed;
-        }
-      } catch (e) {}
+    const savedVersion = localStorage.getItem('ritual_practices_version');
+    const CURRENT_VERSION = '2';
+    if (savedVersion === CURRENT_VERSION) {
+      const saved = localStorage.getItem('ritual_practices');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.length === INITIAL_PRACTICES.length && parsed[0].id === INITIAL_PRACTICES[0].id && parsed.every((p: any) => p.rituals)) {
+            return parsed;
+          }
+        } catch (e) {}
+      }
     }
+    localStorage.setItem('ritual_practices_version', CURRENT_VERSION);
     localStorage.setItem('ritual_practices', JSON.stringify(INITIAL_PRACTICES));
     return INITIAL_PRACTICES;
   });
@@ -460,11 +465,9 @@ export default function App() {
     setSelectedPractice(practice);
   };
 
-  const getCompletedPracticeMinutes = (practice: Practice, elapsedSeconds?: number) => {
-    const seconds = Number(elapsedSeconds);
+  const getCompletedPracticeMinutes = (practice: Practice, _elapsedSeconds?: number) => {
     const fallbackSeconds = Number(practice.durationSec) || 60;
-    const durationSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : fallbackSeconds;
-    return Math.max(1, Math.round((durationSeconds / 60) * 10) / 10);
+    return Math.max(1, Math.round((fallbackSeconds / 60) * 10) / 10);
   };
 
   const handleCompletePractice = (elapsedSeconds?: number) => {
@@ -660,6 +663,7 @@ export default function App() {
                     isSubscribed={isSubscribed}
                     onOpenSubscription={() => setShowSubscription(true)}
                     onResetAll={handleResetAll}
+                    onSignOut={() => setOnboardingCompleted(false)}
                     stats={stats}
                     healthSource={healthSource}
                     onRefreshHealth={refreshHealth}
