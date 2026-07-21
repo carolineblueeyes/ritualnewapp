@@ -8,22 +8,28 @@ import {
 import { bleRingService } from '../services/health/ring';
 import { clearHealthCache } from '../services/health/manager';
 import { connectHealthSource } from '../services/health/connectFlow';
+import { healthService } from '../services/health/health.service';
 import { notificationService, rescheduleAll } from '../services/notifications';
 import { STORAGE_KEYS } from '../services/notifications';
 import SelectModal from './SelectModal';
+import TimePickerModal, { normalizeTime } from './TimePickerModal';
+import { requestPrivacySafeSync, pullPreferencesFromSupabase } from '../services/supabase/privacySync';
+import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged, signOutAuth } from '../services/supabase/auth';
 
 interface ProfileProps {
   onOpenSubscription: () => void;
   isSubscribed: boolean;
   onResetAll: () => void;
+  onSignOut?: () => void;
   onSyncMetrics?: (metrics: { hrv: number; sleep: number; activity: number; pulse: number }) => void;
   stats?: any;
   healthSource?: 'none' | 'ring' | 'healthapp';
   onRefreshHealth?: () => void;
 }
 
-export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, onSyncMetrics, stats, healthSource, onRefreshHealth }: ProfileProps) {
-  const [userName, setUserName] = useState(() => localStorage.getItem('ritual_user_name') || 'Дмитрий');
+export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, onSignOut, onSyncMetrics, stats, healthSource, onRefreshHealth }: ProfileProps) {
+  const [userName, setUserName] = useState(() => localStorage.getItem('ritual_user_name') || 'Гость Ritual');
+  const [authDisplayName, setAuthDisplayName] = useState('Гость Ritual');
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(userName);
 
@@ -32,10 +38,9 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
     return val === null ? true : val === 'true';
   });
   const [reminderTime, setReminderTime] = useState(() => {
-    return localStorage.getItem(STORAGE_KEYS.reminderTime) || '21:00';
+    return normalizeTime(localStorage.getItem(STORAGE_KEYS.reminderTime), '21:00');
   });
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [currentIcon, setCurrentIcon] = useState('Classic Slate');
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
   const [userGender, setUserGender] = useState(() => localStorage.getItem('ritual_user_gender') || 'unspecified');
 
@@ -53,8 +58,6 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   );
 
   const [showGenderModal, setShowGenderModal] = useState(false);
-  const [showIconModal, setShowIconModal] = useState(false);
-
   const [showBleScanner, setShowBleScanner] = useState(false);
   const [showHealthKitPermissions, setShowHealthKitPermissions] = useState(false);
   const [showHealthConnectPermissions, setShowHealthConnectPermissions] = useState(false);
@@ -69,6 +72,51 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   const [syncStep, setSyncStep] = useState('');
 
   const isAnyModalOpen = showBleScanner || showHealthKitPermissions || showHealthConnectPermissions || isSyncing;
+  const profilePlatform = healthService.getPlatform();
+  const showAppleHealth = profilePlatform === 'ios';
+
+  useEffect(() => {
+    let mounted = true;
+
+    const applyDisplayName = (displayName: string) => {
+      setAuthDisplayName(displayName);
+      if (!localStorage.getItem('ritual_user_name')) {
+        setUserName(displayName);
+        setTempName(displayName);
+      }
+    };
+
+    getCurrentAuthUser()
+      .then(user => {
+        if (!mounted) return;
+        applyDisplayName(getAuthDisplayName(user));
+      })
+      .catch(() => {});
+
+    const unsubscribe = onAuthChanged(session => {
+      if (!mounted) return;
+      applyDisplayName(getAuthDisplayName(session?.user ?? null));
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    pullPreferencesFromSupabase()
+      .then(() => {
+        const name = localStorage.getItem('ritual_user_name');
+        if (name) {
+          setUserName(name);
+          setTempName(name);
+        }
+        const gender = localStorage.getItem('ritual_user_gender');
+        if (gender) setUserGender(gender);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (isAnyModalOpen) {
@@ -92,6 +140,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   const handleGenderChange = (newGender: string) => {
     setUserGender(newGender);
     localStorage.setItem('ritual_user_gender', newGender);
+    requestPrivacySafeSync();
   };
 
   const handleSaveName = () => {
@@ -99,8 +148,22 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
     if (trimmed) {
       setUserName(trimmed);
       localStorage.setItem('ritual_user_name', trimmed);
+      requestPrivacySafeSync();
     }
     setIsEditingName(false);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOutAuth();
+      localStorage.removeItem('ritual_user_name');
+      setAuthDisplayName('Гость Ritual');
+      setUserName('Гость Ritual');
+      setTempName('Гость Ritual');
+      onSignOut?.();
+    } catch (error) {
+      console.error('Failed to sign out', error);
+    }
   };
 
   const handleRealBluetoothConnect = async () => {
@@ -248,6 +311,11 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             </>
           )}
         </div>
+        {authDisplayName !== userName && (
+          <p className="text-[10px] text-white/35 z-10 mb-2 max-w-[240px] truncate">
+            Аккаунт: {authDisplayName}
+          </p>
+        )}
 
         {/* Subscription */}
         {isSubscribed ? (
@@ -298,6 +366,8 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           </div>
         )}
 
+        {showAppleHealth && (
+          <>
         {/* Apple HealthKit */}
         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex justify-between items-center text-left">
           <div className="flex items-center gap-3">
@@ -336,6 +406,11 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           )}
         </div>
 
+          </>
+        )}
+
+        {!showAppleHealth && (
+          <>
         {/* Google Health Connect */}
         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex justify-between items-center text-left">
           <div className="flex items-center gap-3">
@@ -373,6 +448,9 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             </button>
           )}
         </div>
+
+          </>
+        )}
 
         {/* BLE Ring */}
         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex flex-col gap-3 text-left">
@@ -500,11 +578,12 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             onClick={async () => {
               const next = !notificationsEnabled;
               if (next) {
-                const granted = await notificationService.requestPermission();
+                const granted = await notificationService.requestNotificationAccess();
                 if (!granted && notificationService.isNative()) return;
               }
               setNotificationsEnabled(next);
               localStorage.setItem(STORAGE_KEYS.enabled, next ? 'true' : 'false');
+              requestPrivacySafeSync();
               if (next) {
                 window.setTimeout(() => {
                   rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule notifications:', e));
@@ -569,28 +648,6 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           onSelect={(v) => handleGenderChange(v)}
         />
 
-        <div className="flex justify-between items-center py-2">
-          <span className="text-xs text-white/50">Иконка приложения</span>
-          <button
-            onClick={() => setShowIconModal(true)}
-            className="bg-transparent text-xs text-white/50 focus:outline-none cursor-pointer hover:text-white/70 transition-colors"
-          >
-            {currentIcon}
-          </button>
-        </div>
-
-        <SelectModal
-          isOpen={showIconModal}
-          onClose={() => setShowIconModal(false)}
-          title="Иконка приложения"
-          options={[
-            { value: 'Classic Slate', label: 'Classic Slate' },
-            { value: 'Aurora Neon', label: 'Aurora Neon' },
-            { value: 'Golden Hour', label: 'Golden Hour' },
-          ]}
-          selectedValue={currentIcon}
-          onSelect={(v) => setCurrentIcon(v)}
-        />
       </div>
 
       {/* SECTION 5: Обратная связь */}
@@ -615,7 +672,10 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           <Trash2 className="w-3.5 h-3.5" />
           <span>Сбросить прогресс</span>
         </button>
-        <button className="w-full h-11 rounded-xl bg-white/[0.02] border border-white/[0.04] text-white/70 hover:text-white/80 transition-all text-[11px] font-medium flex items-center justify-center gap-2">
+        <button
+          onClick={() => void handleSignOut()}
+          className="w-full h-11 rounded-xl bg-white/[0.02] border border-white/[0.04] text-white/70 hover:text-white/80 transition-all text-[11px] font-medium flex items-center justify-center gap-2"
+        >
           <LogOut className="w-3.5 h-3.5" />
           <span>Выйти</span>
         </button>
@@ -623,8 +683,27 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
 
       {/* OVERLAYS & MODALS */}
       <AnimatePresence>
+        <TimePickerModal
+          isOpen={showTimePicker}
+          title="Время напоминания"
+          subtitle="Ежедневное напоминание о практике"
+          value={reminderTime}
+          defaultValue="21:00"
+          minuteStep={5}
+          onClose={() => setShowTimePicker(false)}
+          onConfirm={(value) => {
+            setReminderTime(value);
+            localStorage.setItem(STORAGE_KEYS.reminderTime, value);
+            setShowTimePicker(false);
+            requestPrivacySafeSync();
+            if (notificationsEnabled) {
+              rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule reminder time:', e));
+            }
+          }}
+        />
+
         {/* Time Picker Modal */}
-        {showTimePicker && (
+        {false && showTimePicker && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
           >
@@ -652,6 +731,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
                       setReminderTime(t);
                       localStorage.setItem(STORAGE_KEYS.reminderTime, t);
                       setShowTimePicker(false);
+                      requestPrivacySafeSync();
                       if (notificationsEnabled) {
                         rescheduleAll().catch(e => console.warn('[Profile] Failed to reschedule reminder time:', e));
                       }

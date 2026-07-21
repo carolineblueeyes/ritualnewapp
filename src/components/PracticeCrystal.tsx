@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { motion } from 'motion/react';
 
 interface PracticeCrystalProps {
@@ -60,6 +60,10 @@ export default function PracticeCrystal({
 
   const crystalPath = useMemo(() => generateCrystalPath(facets, cx, cy, r), [facets]);
   const facetLines = useMemo(() => generateFacetLines(facets, cx, cy, r), [facets]);
+  const crystalId = useId().replace(/:/g, '');
+  const bodyGradientId = `crystal-body-grad-${crystalId}`;
+  const strokeGradientId = `crystal-stroke-grad-${crystalId}`;
+  const glowFilterId = `crystal-glow-${crystalId}`;
 
   const sparkleCount = hasSparks ? Math.min(facets, 16) : 0;
 
@@ -72,8 +76,12 @@ export default function PracticeCrystal({
           opacity: [glowIntensity * 0.3, glowIntensity * 0.6, glowIntensity * 0.3],
         }}
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute w-44 h-44 rounded-full blur-[40px]"
-        style={{ backgroundColor: color }}
+        className="absolute w-44 h-44 rounded-full blur-[28px]"
+        style={{
+          backgroundColor: color,
+          transform: 'translateZ(0)',
+          willChange: 'transform, opacity',
+        }}
       />
 
       {/* Beam effect */}
@@ -86,6 +94,7 @@ export default function PracticeCrystal({
           style={{
             background: `linear-gradient(to top, ${color}, transparent)`,
             filter: `blur(2px)`,
+            willChange: 'transform, opacity',
           }}
         />
       )}
@@ -122,7 +131,7 @@ export default function PracticeCrystal({
       {/* Crystal SVG */}
       <motion.svg
         viewBox="0 0 200 200"
-        className="w-48 h-48 drop-shadow-2xl"
+        className="w-48 h-48"
         animate={{
           rotate: rotationSpeed > 0 ? 360 : 0,
           scale: isPulsing ? [1, 1.06, 1] : 1,
@@ -131,19 +140,24 @@ export default function PracticeCrystal({
           rotate: { duration: rotationSpeed || 999, repeat: Infinity, ease: 'linear' },
           scale: { duration: pulseRate, repeat: Infinity, ease: 'easeInOut' },
         }}
+        style={{
+          transform: 'translateZ(0)',
+          willChange: 'transform',
+          filter: `drop-shadow(0 14px 24px ${color}22)`,
+        }}
       >
         <defs>
-          <linearGradient id="crystal-body-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id={bodyGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#ffffff" stopOpacity="0.4" />
             <stop offset="50%" stopColor={color} stopOpacity="0.2" />
             <stop offset="100%" stopColor="#ffffff" stopOpacity="0.1" />
           </linearGradient>
-          <linearGradient id="crystal-stroke-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id={strokeGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#ffffff" stopOpacity="0.35" />
             <stop offset="100%" stopColor={color} stopOpacity="0.5" />
           </linearGradient>
-          <filter id="crystal-glow">
-            <feGaussianBlur stdDeviation="3" result="blur" />
+          <filter id={glowFilterId} x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="1.2" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -154,13 +168,14 @@ export default function PracticeCrystal({
         {/* Main crystal body */}
         <motion.path
           d={crystalPath}
-          fill="url(#crystal-body-grad)"
-          stroke="url(#crystal-stroke-grad)"
+          fill={`url(#${bodyGradientId})`}
+          stroke={`url(#${strokeGradientId})`}
           strokeWidth="0.8"
-          filter="url(#crystal-glow)"
+          filter={isPulsing ? undefined : `url(#${glowFilterId})`}
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1 }}
+          style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
         />
 
         {/* Facet lines */}
@@ -248,7 +263,7 @@ export default function PracticeCrystal({
           className="absolute inset-0 rounded-full pointer-events-none"
           style={{
             background: `radial-gradient(circle, rgba(100,100,120,${fogPercent / 100 * 0.7}) 0%, transparent 70%)`,
-            backdropFilter: `blur(${fogPercent / 100 * 8}px)`,
+            backdropFilter: `blur(${Math.min(fogPercent / 100 * 4, 3)}px)`,
           }}
         />
       )}

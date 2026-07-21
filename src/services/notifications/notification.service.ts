@@ -1,10 +1,30 @@
 import { NotificationPayload, STORAGE_KEYS } from './notification.types';
+import { getSupabaseAccessToken } from '../supabase/client';
 
 let initialized = false;
-let PushNotifications: any = null;
+let FirebaseMessaging: any = null;
 let LocalNotifications: any = null;
 let pluginsLoaded = false;
 const CHANNEL_ID = 'ritual-reminders';
+const PUSH_INSTALLATION_ID_KEY = 'ritual_push_installation_id';
+const PUSH_TOKEN_KEY = 'ritual_push_token';
+
+type PushPlatform = 'android' | 'ios' | 'web' | 'unknown';
+type PushRegistrationStatus =
+  | 'registered'
+  | 'not_native'
+  | 'messaging_unavailable'
+  | 'unsupported'
+  | 'permission_denied'
+  | 'token_unavailable'
+  | 'pushBackendUnavailable'
+  | 'backend_error';
+
+export interface PushRegistrationResult {
+  ok: boolean;
+  status: PushRegistrationStatus;
+  token?: string;
+}
 
 function createNotificationId(): number {
   return Math.floor(Math.random() * 2147483646) + 1;
@@ -21,7 +41,11 @@ async function canUseExactAlarm(): Promise<boolean> {
 
   try {
     const result = await LocalNotifications.checkExactNotificationSetting();
-    return Object.values(result ?? {}).some((value) => value === 'granted');
+    const granted = Object.values(result ?? {}).some((value) => value === 'granted');
+    if (!granted) {
+      console.warn('[NotificationService] Exact alarms are not granted; scheduling inexact notifications instead');
+    }
+    return granted;
   } catch (e) {
     console.warn('[NotificationService] Exact alarm setting check failed:', e);
     return false;
@@ -61,11 +85,11 @@ async function loadPlugins(): Promise<boolean> {
     LocalNotifications = localMod.LocalNotifications;
     
     try {
-      const pushMod = await import('@capacitor/push-notifications');
-      PushNotifications = pushMod.PushNotifications;
+      const messagingMod = await import('@capacitor-firebase/messaging');
+      FirebaseMessaging = messagingMod.FirebaseMessaging;
     } catch (e) {
-      console.warn('[NotificationService] PushNotifications module is not available on this platform:', e);
-      PushNotifications = null;
+      console.warn('[NotificationService] FirebaseMessaging module is not available on this platform:', e);
+      FirebaseMessaging = null;
     }
     
     pluginsLoaded = true;
@@ -77,12 +101,100 @@ async function loadPlugins(): Promise<boolean> {
   }
 }
 
+async function ensureLocalNotificationsReady(request = false): Promise<boolean> {
+  if (!isNotificationsEnabled()) return false;
+  if (!isNative()) return false;
+
+  await loadPlugins();
+  if (!LocalNotifications) return false;
+
+  if (request) {
+    return requestPermission();
+  }
+
+  return checkPermission();
+}
+
+async function ensureReady(request = false): Promise<boolean> {
+  return ensureLocalNotificationsReady(request);
+}
+
 function isNative(): boolean {
   try {
     return !!(window as any).Capacitor?.isNativePlatform?.();
   } catch {
     return false;
   }
+}
+
+function getPlatform(): PushPlatform {
+  try {
+    const platform = (window as any).Capacitor?.getPlatform?.();
+    return ['android', 'ios', 'web'].includes(platform) ? platform : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function getApiBaseUrl(): string | null {
+  const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+  if (apiBaseUrl) return apiBaseUrl;
+
+  if (isNative()) {
+    console.warn('[NotificationService] VITE_API_URL is not configured; push token will stay local and remote push cannot target this install.');
+    return null;
+  }
+
+  return '';
+}
+
+function getInstallationId(): string {
+  const existing = localStorage.getItem(PUSH_INSTALLATION_ID_KEY);
+  if (existing) return existing;
+
+  const id = crypto.randomUUID();
+  localStorage.setItem(PUSH_INSTALLATION_ID_KEY, id);
+  return id;
+}
+
+function normalizeNotificationPayload(data?: Record<string, unknown>): Record<string, string> {
+  return normalizeNotificationData(data);
+}
+
+function extractNotificationData(notification: any): Record<string, string> {
+  const data = notification?.extra || notification?.data;
+  return data && typeof data === 'object' ? normalizeNotificationPayload(data as Record<string, unknown>) : {};
+}
+
+async function sendPushTokenToBackend(token: string): Promise<PushRegistrationResult> {
+  const apiBaseUrl = getApiBaseUrl();
+  const installationId = getInstallationId();
+  const platform = getPlatform();
+  const accessToken = await getSupabaseAccessToken();
+
+  localStorage.setItem(PUSH_TOKEN_KEY, token);
+
+  if (apiBaseUrl === null) {
+    return { ok: false, status: 'pushBackendUnavailable', token };
+  }
+  if (!accessToken) {
+    return { ok: false, status: 'pushBackendUnavailable', token };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/notifications/push-token`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ installationId, token, platform }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Push token registration failed with ${response.status}`);
+  }
+
+  return { ok: true, status: 'registered', token };
 }
 
 function isNotificationsEnabled(): boolean {
@@ -112,6 +224,15 @@ async function requestPermission(): Promise<boolean> {
   }
 }
 
+async function requestNotificationAccess(): Promise<boolean> {
+  const granted = await requestPermission();
+  if (granted) {
+    await promptExactAlarmSettingsIfNeeded();
+    await registerForPush();
+  }
+  return granted;
+}
+
 async function checkPermission(): Promise<boolean> {
   if (!isNative()) return false;
   try {
@@ -126,24 +247,33 @@ async function checkPermission(): Promise<boolean> {
   }
 }
 
-async function registerForPush(): Promise<void> {
-  if (!isNative()) return;
+async function registerForPush(): Promise<PushRegistrationResult> {
+  if (!isNative()) return { ok: false, status: 'not_native' };
   try {
     await loadPlugins();
-    if (!PushNotifications) return;
+    if (!FirebaseMessaging) return { ok: false, status: 'messaging_unavailable' };
 
-    let permStatus = await PushNotifications.checkPermissions();
+    const support = await FirebaseMessaging.isSupported?.();
+    if (support && support.isSupported === false) return { ok: false, status: 'unsupported' };
+
+    let permStatus = await FirebaseMessaging.checkPermissions();
     if (permStatus.receive === 'prompt') {
-      permStatus = await PushNotifications.requestPermissions();
+      permStatus = await FirebaseMessaging.requestPermissions();
     }
 
     if (permStatus.receive === 'granted') {
-      await PushNotifications.register();
+      const { token } = await FirebaseMessaging.getToken();
+      if (token) {
+        return await sendPushTokenToBackend(token);
+      }
+      return { ok: false, status: 'token_unavailable' };
     } else {
       console.warn('[NotificationService] Push permissions not granted');
+      return { ok: false, status: 'permission_denied' };
     }
   } catch (err) {
     console.error('[NotificationService] Failed to register push notifications:', err);
+    return { ok: false, status: 'backend_error' };
   }
 }
 
@@ -158,34 +288,35 @@ function addListeners(
     if (LocalNotifications) {
       LocalNotifications.addListener('localNotificationActionPerformed', (action: any) => {
         console.log('[NotificationService] Local opened:', action?.notification);
-        const data = action?.notification?.extra || action?.notification?.data || {};
-        onNotificationOpened?.(data);
+        onNotificationOpened?.(extractNotificationData(action?.notification));
       });
     }
 
-    if (PushNotifications) {
-      PushNotifications.addListener('registration', (token: any) => {
-        console.log('[NotificationService] Push registration successful, token:', token.value);
-        localStorage.setItem('ritual_push_token', token.value);
+    if (FirebaseMessaging) {
+      FirebaseMessaging.addListener('tokenReceived', (event: any) => {
+        console.log('[NotificationService] FCM token refreshed');
+        sendPushTokenToBackend(event.token).then((result) => {
+          if (!result.ok) {
+            console.warn(`[NotificationService] Push token refresh not fully registered: ${result.status}`);
+          }
+        }).catch((e) => {
+          console.warn('[NotificationService] Failed to sync refreshed push token:', e);
+        });
       });
 
-      PushNotifications.addListener('registrationError', (error: any) => {
-        console.error('[NotificationService] Push registration error:', error.error);
-      });
-
-      PushNotifications.addListener('pushNotificationReceived', (notification: any) => {
-        console.log('[NotificationService] Push received:', notification);
+      FirebaseMessaging.addListener('notificationReceived', (event: any) => {
+        console.log('[NotificationService] Push received:', event.notification);
         const quietMode = localStorage.getItem('ritual_quiet_mode_active');
         if (quietMode === 'true') {
           console.log('[NotificationService] Suppressing push notification since quiet mode is active');
           return;
         }
-        onNotificationReceived?.(notification.data ?? {});
+        onNotificationReceived?.(extractNotificationData(event.notification));
       });
 
-      PushNotifications.addListener('pushNotificationActionPerformed', (action: any) => {
-        console.log('[NotificationService] Push action performed:', action);
-        onNotificationOpened?.(action.notification?.data ?? {});
+      FirebaseMessaging.addListener('notificationActionPerformed', (event: any) => {
+        console.log('[NotificationService] Push action performed:', event);
+        onNotificationOpened?.(extractNotificationData(event.notification));
       });
     }
   } catch (e) {
@@ -209,14 +340,50 @@ async function cancelAll(): Promise<void> {
   }
 }
 
-async function scheduleLocal(payload: NotificationPayload, delaySeconds: number): Promise<number | null> {
-  if (!isNotificationsEnabled()) return null;
-  if (!isNative()) return null;
-  if (!await checkPermission()) return null;
+function readScheduledNotifications(): any[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeScheduledNotifications(notifications: any[]): void {
+  localStorage.setItem(STORAGE_KEYS.scheduled, JSON.stringify(notifications));
+}
+
+function rememberScheduledNotification(notification: any): void {
+  const scheduled = readScheduledNotifications().filter((item) => item.id !== notification.id);
+  scheduled.push(notification);
+  writeScheduledNotifications(scheduled);
+}
+
+async function cancelByIds(ids: number[]): Promise<void> {
+  const uniqueIds = [...new Set(ids)].filter(Number.isFinite);
+  if (uniqueIds.length === 0) return;
 
   try {
     await loadPlugins();
-    if (!LocalNotifications) return null;
+    if (!LocalNotifications) return;
+    await LocalNotifications.cancel({
+      notifications: uniqueIds.map((id) => ({ id })),
+    });
+
+    const remaining = readScheduledNotifications().filter((item) => !uniqueIds.includes(item.id));
+    if (remaining.length > 0) {
+      writeScheduledNotifications(remaining);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.scheduled);
+    }
+  } catch (e) {
+    console.warn('[NotificationService] cancelByIds failed:', e);
+  }
+}
+
+async function scheduleLocal(payload: NotificationPayload, delaySeconds: number): Promise<number | null> {
+  try {
+    if (!await ensureReady()) return null;
 
     const id = payload.id ?? createNotificationId();
     const date = new Date(Date.now() + delaySeconds * 1000);
@@ -226,11 +393,11 @@ async function scheduleLocal(payload: NotificationPayload, delaySeconds: number)
       body: payload.body,
       id,
       channelId: CHANNEL_ID,
-      smallIcon: 'ic_launcher',
+      smallIcon: 'ic_push_notification',
       largeIcon: 'ic_launcher',
       extra: {
         type: String(payload.type),
-        ...normalizeNotificationData(payload.data),
+        ...normalizeNotificationPayload(payload.data),
       },
     };
 
@@ -245,13 +412,69 @@ async function scheduleLocal(payload: NotificationPayload, delaySeconds: number)
       true,
     );
 
-    const scheduled = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
-    scheduled.push({ id, type: payload.type, title: payload.title, body: payload.body, scheduledDate: date.toISOString(), data: payload.data });
-    localStorage.setItem(STORAGE_KEYS.scheduled, JSON.stringify(scheduled));
+    rememberScheduledNotification({
+      id,
+      type: payload.type,
+      title: payload.title,
+      body: payload.body,
+      scheduledDate: date.toISOString(),
+      data: normalizeNotificationPayload(payload.data),
+    });
 
     return id;
   } catch (e) {
     console.warn('[NotificationService] scheduleLocal failed:', e);
+    return null;
+  }
+}
+
+async function scheduleAtDate(
+  payload: NotificationPayload,
+  at: Date,
+  prefersExact = true,
+): Promise<number | null> {
+  try {
+    if (!await ensureReady()) return null;
+    if (at.getTime() <= Date.now() + 500) return null;
+
+    const id = payload.id ?? createNotificationId();
+
+    const notificationConfig: any = {
+      title: payload.title,
+      body: payload.body,
+      id,
+      channelId: CHANNEL_ID,
+      smallIcon: 'ic_push_notification',
+      largeIcon: 'ic_launcher',
+      extra: {
+        type: String(payload.type),
+        ...normalizeNotificationPayload(payload.data),
+      },
+    };
+
+    await scheduleWithFallback(
+      {
+        ...notificationConfig,
+        schedule: {
+          at,
+          allowWhileIdle: true,
+        },
+      },
+      prefersExact,
+    );
+
+    rememberScheduledNotification({
+      id,
+      type: payload.type,
+      title: payload.title,
+      body: payload.body,
+      scheduledDate: at.toISOString(),
+      data: normalizeNotificationPayload(payload.data),
+    });
+
+    return id;
+  } catch (e) {
+    console.warn('[NotificationService] scheduleAtDate failed:', e);
     return null;
   }
 }
@@ -261,13 +484,8 @@ async function scheduleAtTime(
   timeHHMM: string,
   repeats: boolean = false
 ): Promise<number | null> {
-  if (!isNotificationsEnabled()) return null;
-  if (!isNative()) return null;
-  if (!await checkPermission()) return null;
-
   try {
-    await loadPlugins();
-    if (!LocalNotifications) return null;
+    if (!await ensureReady()) return null;
 
     const [hours, minutes] = timeHHMM.split(':').map(Number);
     const id = payload.id ?? createNotificationId();
@@ -277,11 +495,11 @@ async function scheduleAtTime(
       body: payload.body,
       id,
       channelId: CHANNEL_ID,
-      smallIcon: 'ic_launcher',
+      smallIcon: 'ic_push_notification',
       largeIcon: 'ic_launcher',
       extra: {
         type: String(payload.type),
-        ...normalizeNotificationData(payload.data),
+        ...normalizeNotificationPayload(payload.data),
       },
     };
 
@@ -290,6 +508,7 @@ async function scheduleAtTime(
     if (repeats) {
       scheduleOpts.on = { hour: hours, minute: minutes };
       scheduleOpts.repeats = true;
+      scheduleOpts.allowWhileIdle = true;
     } else {
       const now = new Date();
       const target = new Date();
@@ -309,16 +528,14 @@ async function scheduleAtTime(
       !repeats,
     );
 
-    const scheduled = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
-    scheduled.push({
+    rememberScheduledNotification({
       id,
       type: payload.type,
       title: payload.title,
       body: payload.body,
       scheduledDate: repeats ? `Daily at ${timeHHMM}` : (scheduleOpts.at as Date).toISOString(),
-      data: payload.data,
+      data: normalizeNotificationPayload(payload.data),
     });
-    localStorage.setItem(STORAGE_KEYS.scheduled, JSON.stringify(scheduled));
 
     return id;
   } catch (e) {
@@ -328,16 +545,51 @@ async function scheduleAtTime(
 }
 
 async function cancelById(id: number): Promise<void> {
+  await cancelByIds([id]);
+}
+
+async function cancelPendingOnChannel(managedTypes: Set<string>): Promise<void> {
   try {
     await loadPlugins();
     if (!LocalNotifications) return;
-    await LocalNotifications.cancel({ notifications: [{ id }] });
-  } catch {}
+
+    const pending = await LocalNotifications.getPending();
+    const notifications = pending?.notifications ?? [];
+    const idsToCancel = notifications
+      .filter((notification: any) => {
+        const channelId = notification?.channelId ?? notification?.channel_id;
+        const type = String(notification?.extra?.type ?? '');
+        return channelId === CHANNEL_ID || managedTypes.has(type);
+      })
+      .map((notification: any) => Number(notification.id))
+      .filter(Number.isFinite);
+
+    if (idsToCancel.length === 0) return;
+    await cancelByIds(idsToCancel);
+  } catch (e) {
+    console.warn('[NotificationService] cancelPendingOnChannel failed:', e);
+  }
 }
 
-async function rescheduleAll(): Promise<void> {
-  if (!isNotificationsEnabled()) return;
-  await cancelAll();
+async function promptExactAlarmSettingsIfNeeded(): Promise<void> {
+  if (!LocalNotifications?.checkExactNotificationSetting) return;
+
+  try {
+    const result = await LocalNotifications.checkExactNotificationSetting();
+    const granted = Object.values(result ?? {}).some((value) => value === 'granted');
+    if (granted) return;
+
+    if (LocalNotifications.changeExactNotificationSetting) {
+      await LocalNotifications.changeExactNotificationSetting();
+    }
+  } catch (e) {
+    console.warn('[NotificationService] Exact alarm settings prompt failed:', e);
+  }
+}
+
+async function rescheduleAll(managedIds: number[], managedTypes: Set<string>): Promise<void> {
+  await cancelPendingOnChannel(managedTypes);
+  await cancelByIds(managedIds);
 }
 
 async function init(
@@ -364,13 +616,20 @@ async function init(
 
 export const notificationService = {
   init,
+  ensureLocalNotificationsReady,
+  ensureReady,
   checkPermission,
   requestPermission,
+  requestNotificationAccess,
   registerForPush,
   cancelAll,
   scheduleLocal,
+  scheduleAtDate,
   scheduleAtTime,
   cancelById,
+  cancelByIds,
+  cancelPendingOnChannel,
+  promptExactAlarmSettingsIfNeeded,
   rescheduleAll,
   isNative,
   isNotificationsEnabled,

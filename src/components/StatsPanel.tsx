@@ -4,6 +4,7 @@ import { Flame, Calendar, Compass, Lock, CheckCircle, HelpCircle } from 'lucide-
 import { UserStats, Practice } from '../types';
 import PracticeEngine from './PracticeEngine';
 import { chaptersData, ChapterId, getPracticeScript } from '../data/practices';
+import { deriveRealStats } from '../services/progressStats';
 
 interface StatsPanelProps {
   stats: UserStats;
@@ -47,6 +48,12 @@ const CHAPTER_DESCRIPTIONS: Record<ChapterId, string> = {
   yasnost: 'Зеркальная призма. Чистота восприятия и ясность.',
 };
 
+function formatStatMinutes(minutes: number): string {
+  if (!Number.isFinite(minutes)) return '0';
+  const rounded = Math.round(minutes * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPanelProps) {
   const [completedLevelIds, setCompletedLevelIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('ritual_completed_path_levels');
@@ -67,9 +74,16 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
     return () => { document.body.style.overflow = ''; };
   }, [showCrystalInfo, activeMeditation]);
 
-  const totalMinutes = stats.totalMinutes !== undefined ? stats.totalMinutes : 0;
-  const completedCount = stats.completedCount !== undefined ? stats.completedCount : 0;
-  const streakDays = stats.streakDays !== undefined ? stats.streakDays : 0;
+  const realStats = deriveRealStats(stats);
+  const totalMinutes = realStats.totalMinutes;
+  const totalMinutesLabel = formatStatMinutes(totalMinutes);
+  const completedCount = realStats.completedCount;
+  const streakDays = realStats.streakDays;
+  const hasPracticeHistory = realStats.history.length > 0;
+  const averagePracticesPerDay = Math.round((completedCount / (streakDays || 1)) * 10) / 10;
+  const stabilityText = hasPracticeHistory
+    ? `Вы выполняете ${averagePracticesPerDay} практик в день. Регулярность считается только по реальной истории сессий.`
+    : 'Здесь появится аналитика после первой завершенной практики. Демо-данные больше не подставляются.';
   const totalCompletedCount = completedLevelIds.length;
 
   let crystalState: 'fog' | 'spark' | 'crystal' | 'silence' | 'energy' | 'clarity' = 'fog';
@@ -223,7 +237,7 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
           <div className="flex flex-col gap-1 px-4">
             <span className="text-[9px] text-white/35 font-mono uppercase tracking-widest">ВРЕМЯ</span>
             <div className="flex items-baseline gap-1.5 mt-1">
-              <span className="text-2xl font-bold font-mono text-white tracking-tight">{totalMinutes}</span>
+              <span className="text-2xl font-bold font-mono text-white tracking-tight">{totalMinutesLabel}</span>
               <span className="text-[10px] text-emerald-400 font-mono font-medium">мин.</span>
             </div>
             <span className="text-[9px] text-white/45 font-medium leading-none mt-0.5">выполнено</span>
@@ -244,7 +258,7 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
           <div className="flex-1 min-w-0">
             <span className="text-[9px] text-white/35 font-mono uppercase tracking-widest block">ОБЩАЯ СТАБИЛЬНОСТЬ</span>
             <p className="text-[11px] text-white/60 font-medium mt-1 leading-relaxed">
-              Вы выполняете {Math.round((completedCount / (streakDays || 1)) * 10) / 10} практик в день. Регулярность сохраняется на отличном уровне.
+              {stabilityText}
             </p>
           </div>
           <div className="flex flex-col items-end flex-none gap-0.5">

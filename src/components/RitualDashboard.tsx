@@ -10,6 +10,7 @@ import QuickStartCard from './QuickStartCard';
 import RingPurchaseBanner from './RingPurchaseBanner';
 import ConnectHealthModal from './ConnectHealthModal';
 import SelectModal from './SelectModal';
+import TimePickerModal, { normalizeTime } from './TimePickerModal';
 import { useHealthData } from '../hooks/useHealthData';
 import { DataSource } from '../services/health/manager';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
@@ -21,20 +22,24 @@ import {
   EMPTY_HISTORY_BY_METRIC,
   HealthAvailabilityByMetric,
   HealthHistoryByMetric,
+  HealthMetrics,
   HealthMetricKey,
   MetricAvailability,
 } from '../services/health/types';
-import { rescheduleAll } from '../services/notifications';
+import { notificationService, rescheduleAll } from '../services/notifications';
 import { ARTICLES } from '../data/articles';
+import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 
 interface RitualDashboardProps {
   practices: Practice[];
   stats: UserStats;
-  onSelectPractice: (practice: Practice) => void;
+  onSelectPractice: (practice: Practice, context?: { timelineSlotId?: string }) => void;
   shine?: ShineBreakdown;
   healthSource?: DataSource;
+  healthMetrics?: HealthMetrics;
   historyByMetric?: HealthHistoryByMetric;
   availabilityByMetric?: HealthAvailabilityByMetric;
+  onRefreshHealth?: () => void | Promise<void>;
 }
 
 interface TimelineSlot {
@@ -49,14 +54,18 @@ const DEFAULT_SLOTS: TimelineSlot[] = [
   { id: '4', time: '20:30', practiceId: 'end-day' }
 ];
 
+const SLOT_ACTIVE_GRACE_MINUTES = 60;
+
 export default function RitualDashboard({
   practices,
   stats,
   onSelectPractice,
   shine,
   healthSource,
+  healthMetrics: healthMetricsProp,
   historyByMetric: historyByMetricProp,
   availabilityByMetric: availabilityByMetricProp,
+  onRefreshHealth,
 }: RitualDashboardProps) {
   const shineScore = shine?.total ?? 0;
   const dataQuality = shine?.dataQuality ?? 'none';
@@ -161,6 +170,16 @@ export default function RitualDashboard({
     "Сегодня мое внимание направлено на себя"
   ];
 
+  const getPresetIntentionId = (text: string): string | null => {
+    const highIndex = INTENTIONS_HIGH.indexOf(text);
+    if (highIndex >= 0) return `high_${highIndex}`;
+
+    const lowIndex = INTENTIONS_LOW.indexOf(text);
+    if (lowIndex >= 0) return `low_${lowIndex}`;
+
+    return null;
+  };
+
   const [focusDate, setFocusDate] = useState<string>(() => {
     return localStorage.getItem('ritual_day_focus_date') || '';
   });
@@ -253,6 +272,7 @@ export default function RitualDashboard({
     localStorage.setItem('ritual_reflection_reaction', chosenReaction);
 
     setReflection({ answer: choice, reactionText: chosenReaction });
+    requestPrivacySafeSync();
   };
 
   const handleSmartIntention = () => {
@@ -267,7 +287,9 @@ export default function RitualDashboard({
     const todayStr = getTodayDateString();
     localStorage.setItem('ritual_day_focus', chosenText);
     localStorage.setItem('ritual_day_focus_date', todayStr);
+    localStorage.setItem('ritual_day_focus_preset_id', getPresetIntentionId(chosenText) ?? `${isHigh ? 'high' : 'low'}_${randomIndex}`);
     setFocusDate(todayStr);
+    requestPrivacySafeSync();
   };
 
   const [slots, setSlots] = useState<TimelineSlot[]>(() => {
@@ -275,7 +297,7 @@ export default function RitualDashboard({
     return saved ? JSON.parse(saved) : DEFAULT_SLOTS;
   });
 
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = getTodayDateString();
 
   const [completedSlots, setCompletedSlots] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem(`ritual_completed_slots_${todayKey}`);
@@ -293,30 +315,45 @@ export default function RitualDashboard({
     return (h || 0) * 60 + (m || 0);
   };
 
-  const getSlotStatus = (slot: TimelineSlot): 'completed' | 'skipped' | 'active' | 'pending' => {
+  const getCurrentMinutes = () => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  };
+
+  const getPracticeDurationMinutes = (practice?: Practice) => {
+    if (practice?.durationSec) return Math.ceil(practice.durationSec / 60);
+    const parsed = parseInt(practice?.duration || '', 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const getSlotActiveUntil = (slot: TimelineSlot) => {
     const assignedPractice = practices.find(p => p.id === slot.practiceId);
-    if (completedSlots[slot.id] || assignedPractice?.completed) return 'completed';
-    const slotIdx = slots.findIndex(s => s.id === slot.id);
-    const activeIdx = slots.findIndex(s => s.id === activeSlotId);
-    if (slotIdx < activeIdx) return 'skipped';
-    if (slot.id === activeSlotId) return 'active';
-    return 'pending';
+    const practiceDuration = getPracticeDurationMinutes(assignedPractice);
+    return getMinutes(slot.time) + Math.max(practiceDuration, SLOT_ACTIVE_GRACE_MINUTES);
+  };
+
+  const getSlotStatus = (slot: TimelineSlot): 'completed' | 'skipped' | 'active' | 'pending' => {
+    if (completedSlots[slot.id]) return 'completed';
+    const currentMinutes = getCurrentMinutes();
+    const slotStart = getMinutes(slot.time);
+    if (currentMinutes < slotStart) return 'pending';
+    if (currentMinutes <= getSlotActiveUntil(slot)) return 'active';
+    return 'skipped';
   };
 
   useEffect(() => {
     const updateActiveSlot = () => {
       if (slots.length === 0) return;
-      const now = new Date();
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const currentMinutes = getCurrentMinutes();
 
       let foundId = '';
-      for (let i = slots.length - 1; i >= 0; i--) {
-        if (currentMinutes >= getMinutes(slots[i].time)) {
-          foundId = slots[i].id;
+      const sortedSlots = [...slots].sort((a, b) => a.time.localeCompare(b.time));
+      for (const slot of sortedSlots) {
+        if (currentMinutes >= getMinutes(slot.time) && currentMinutes <= getSlotActiveUntil(slot)) {
+          foundId = slot.id;
           break;
         }
       }
-      if (!foundId) foundId = slots[0].id;
 
       setActiveSlotId(foundId);
     };
@@ -334,14 +371,17 @@ export default function RitualDashboard({
 
   const [showEditPracticeModal, setShowEditPracticeModal] = useState(false);
   const [showNewPracticeModal, setShowNewPracticeModal] = useState(false);
+  const [showEditTimePicker, setShowEditTimePicker] = useState(false);
+  const [showNewTimePicker, setShowNewTimePicker] = useState(false);
 
   const { 
-    metrics: healthMetrics, 
+    metrics: dashboardHealthMetrics,
     historyByMetric: dashboardHistoryByMetric,
     availabilityByMetric: dashboardAvailabilityByMetric,
     refresh: refreshDashboardHealth
   } = useHealthData();
 
+  const healthMetrics = healthMetricsProp || dashboardHealthMetrics;
   const historyByMetric = historyByMetricProp || dashboardHistoryByMetric;
   const availabilityByMetric = availabilityByMetricProp || dashboardAvailabilityByMetric;
 
@@ -466,7 +506,10 @@ export default function RitualDashboard({
     }
 
     const result = await connectHealthSource(getCurrentHealthSourceType(), {
-      onRefresh: refreshDashboardHealth,
+      onRefresh: async () => {
+        await refreshDashboardHealth();
+        await onRefreshHealth?.();
+      },
       onSyncing: setIsHealthConnecting,
       onStep: setHealthConnectStep,
     });
@@ -535,6 +578,16 @@ export default function RitualDashboard({
   }, [slots]);
   useEffect(() => { localStorage.setItem('ritual_pregnancy_mode', isPregnancyMode ? 'true' : 'false'); }, [isPregnancyMode]);
 
+  const maybeRequestNotificationAccessForNewSlot = async () => {
+    if (!notificationService.isNotificationsEnabled() || !notificationService.isNative()) return;
+    if (await notificationService.checkPermission()) return;
+
+    const granted = await notificationService.requestNotificationAccess();
+    if (granted) {
+      await rescheduleAll();
+    }
+  };
+
   const handleAddSlot = (e: React.FormEvent) => {
     e.preventDefault();
     const newSlot: TimelineSlot = { id: Date.now().toString(), time: newSlotTime, practiceId: newSlotPracticeId };
@@ -543,6 +596,8 @@ export default function RitualDashboard({
     setIsAddingSlot(false);
     setNewSlotTime('14:00');
     setNewSlotPracticeId('');
+    maybeRequestNotificationAccessForNewSlot()
+      .catch(e => console.warn('[RitualDashboard] Failed to request notification access:', e));
   };
 
   const handleSaveSlotEdit = (id: string) => {
@@ -816,10 +871,13 @@ export default function RitualDashboard({
               <span className="text-[11px] text-white/60 tracking-wider font-semibold px-1">Течение дня</span>
               <motion.div layout className="relative flex flex-col gap-1.5">
                 {(() => {
-                  const now = new Date();
-                  const currentMin = now.getHours() * 60 + now.getMinutes();
-                  const firstMin = getMinutes(slots[0]?.time || '00:00');
-                  const lastMin = getMinutes(slots[slots.length - 1]?.time || '23:59');
+                  const visibleSlots = slots
+                    .filter((slot) => slot.practiceId !== '')
+                    .sort((a, b) => a.time.localeCompare(b.time));
+                  const currentMin = getCurrentMinutes();
+                  const firstMin = getMinutes(visibleSlots[0]?.time || '00:00');
+                  const lastSlot = visibleSlots[visibleSlots.length - 1];
+                  const lastMin = lastSlot ? getSlotActiveUntil(lastSlot) : 1439;
                   const totalRange = lastMin - firstMin || 1;
                   const progress = Math.max(0, Math.min(1, (currentMin - firstMin) / totalRange));
                   return (
@@ -840,6 +898,7 @@ export default function RitualDashboard({
 
                 {slots
                   .filter((slot) => slot.practiceId !== '')
+                  .sort((a, b) => a.time.localeCompare(b.time))
                   .map((slot) => {
                     const assignedPractice = practices.find(p => p.id === slot.practiceId);
                     const isEditing = editingSlotId === slot.id;
@@ -888,13 +947,13 @@ export default function RitualDashboard({
                                 className="p-3.5 bg-[#121216]/90 border border-white/[0.08] rounded-xl flex flex-col gap-2.5 shadow-2xl backdrop-blur-md overflow-hidden"
                               >
                                 <div className="flex gap-2">
-                                  <input 
-                                    type="text" 
-                                    value={editTime} 
-                                    onChange={(e) => setEditTime(e.target.value)} 
-                                    className="w-16 bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/[0.12]" 
-                                    placeholder="08:00" 
-                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowEditTimePicker(true)}
+                                    className="w-16 bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-1.5 text-xs font-mono tabular-nums text-white/80 text-left hover:border-white/[0.12] focus:outline-none focus:border-white/[0.12] transition-colors"
+                                  >
+                                    {normalizeTime(editTime, slot.time)}
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => setShowEditPracticeModal(true)}
@@ -944,7 +1003,7 @@ export default function RitualDashboard({
                                         )}
                                       </div>
                                       <span 
-                                        onClick={() => canInteract && onSelectPractice(assignedPractice)}
+                                        onClick={() => canInteract && onSelectPractice(assignedPractice, { timelineSlotId: slot.id })}
                                         className={`text-[13px] font-semibold mt-1 tracking-wide leading-snug ${
                                           canInteract ? 'text-white/95 hover:text-[#34d399] cursor-pointer transition-colors' :
                                           isSkipped ? 'text-white/25' :
@@ -990,7 +1049,13 @@ export default function RitualDashboard({
                       <div className="grid grid-cols-2 gap-3">
                         <div className="flex flex-col gap-1.5">
                           <label className="text-[9px] text-white/40 font-mono">Время</label>
-                          <input type="time" value={newSlotTime} onChange={(e) => setNewSlotTime(e.target.value)} className="bg-white/[0.02] border border-white/[0.06] rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/[0.12]" required />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewTimePicker(true)}
+                            className="bg-white/[0.02] border border-white/[0.06] rounded-lg px-2.5 py-1.5 text-xs font-mono tabular-nums text-white/80 text-left hover:border-white/[0.12] focus:outline-none focus:border-white/[0.12] transition-colors"
+                          >
+                            {normalizeTime(newSlotTime, '14:00')}
+                          </button>
                         </div>
                         <div className="flex flex-col gap-1.5">
                           <label className="text-[9px] text-white/40 font-mono">Ритуал</label>
@@ -1026,82 +1091,7 @@ export default function RitualDashboard({
               </div>
             </section>
 
-            {/* ===== USEFUL READING ===== */}
-            <section className="flex flex-col gap-3">
-              <div className="flex items-center justify-between px-1">
-                <span className="text-[11px] text-white/60 tracking-wider font-semibold">Полезное чтение</span>
-                <button 
-                  onClick={() => setCurrentPage(1)} 
-                  className="text-[10px] text-white/40 hover:text-white/70 transition-colors flex items-center gap-0.5 font-semibold cursor-pointer"
-                >
-                  Все статьи <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x snap-mandatory px-1">
-                {ARTICLES.map((art) => {
-                  const isCompleted = completedArticles.includes(art.id);
-                  const artBg: Record<string, string> = {
-                    'movement': 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?q=80&w=400&auto=format&fit=crop',
-                    'attention': 'https://images.unsplash.com/photo-1507413245164-6160d8298b31?q=80&w=400&auto=format&fit=crop',
-                    'sleep': 'https://images.unsplash.com/photo-1511295742364-92767fa62d9f?q=80&w=400&auto=format&fit=crop',
-                    'breathing': 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=400&auto=format&fit=crop',
-                    'cold-water': 'https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?q=80&w=400&auto=format&fit=crop',
-                    'water-drinking': 'https://images.unsplash.com/photo-1523362628745-0c100150b504?q=80&w=400&auto=format&fit=crop',
-                    'digital-detox': 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?q=80&w=400&auto=format&fit=crop',
-                    'posture': 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=400&auto=format&fit=crop'
-                  };
 
-                  const bgUrl = artBg[art.id] || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=400&auto=format&fit=crop';
-
-                  return (
-                    <motion.div
-                      key={art.id}
-                      onClick={() => {
-                        setSelectedArticleId(art.id);
-                        setScrollProgress(0);
-                      }}
-                      className="snap-start flex-shrink-0 w-[200px] h-[130px] relative rounded-2xl cursor-pointer overflow-hidden p-4 flex flex-col justify-between border border-white/[0.04]"
-                      whileHover={{ scale: 1.02, borderColor: 'rgba(255,255,255,0.08)' }}
-                      whileTap={{ scale: 0.98 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <div className="absolute inset-0">
-                        <img 
-                          src={bgUrl} 
-                          alt="" 
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d12]/95 via-[#0d0d12]/75 to-[#0d0d12]/40" />
-                      </div>
-
-                      <div className="relative z-10 flex items-center justify-between">
-                        <span className="text-[8px] font-mono font-bold tracking-widest text-amber-300 uppercase bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
-                          {art.category}
-                        </span>
-                        <span className="text-[9px] text-white/40 font-mono flex items-center gap-0.5">
-                          <Clock className="w-2.5 h-2.5" /> {art.readTime}
-                        </span>
-                      </div>
-
-                      <div className="relative z-10 flex flex-col gap-1 text-left">
-                        <h4 className="text-[12px] font-semibold text-white/95 leading-tight line-clamp-2">
-                          {art.title}
-                        </h4>
-                        <div className="flex items-center justify-between gap-1.5">
-                          <p className="text-[10px] text-white/50 truncate flex-1 leading-none">{art.subtitle}</p>
-                          {isCompleted && (
-                            <div className="w-4 h-4 rounded-full bg-[#E6B85C]/20 border border-[#E6B85C]/40 flex items-center justify-center text-[#E6B85C] flex-shrink-0">
-                              <Check className="w-2.5 h-2.5 stroke-[2.5]" />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </section>
           </motion.div>
         )}
 
@@ -1775,12 +1765,16 @@ export default function RitualDashboard({
                   // Coordinates for SVG lines
                   const width = 300;
                   const height = 120;
+                  const chartLeft = 20;
+                  const chartRight = 260;
+                  const chartWidth = chartRight - chartLeft;
+                  const axisLabelX = width - 12;
                   const daysCount = activeAnalyticsList.length;
 
                   const points = activeAnalyticsList.map((dVal, i) => {
-                    const x = daysCount === 7 
-                      ? 20 + i * (260 / 6)
-                      : 10 + i * (280 / (daysCount - 1));
+                    const x = daysCount > 1
+                      ? chartLeft + i * (chartWidth / (daysCount - 1))
+                      : chartLeft + chartWidth / 2;
                     const clampedScore = dVal.shineScore === null ? null : Math.max(40, Math.min(100, dVal.shineScore));
                     const y = clampedScore === null ? 95 : 95 - ((clampedScore - 40) / 60) * 80;
                     return { x, y, ...dVal, originalIndex: i };
@@ -1870,18 +1864,19 @@ export default function RitualDashboard({
                               return (
                                 <g key={gridVal} className="opacity-[0.1]">
                                   <line 
-                                    x1="5" 
+                                    x1={chartLeft - 6}
                                     y1={yCoord} 
-                                    x2={width - 5} 
+                                    x2={chartRight + 4}
                                     y2={yCoord} 
                                     stroke="rgba(255,255,255,0.4)" 
                                     strokeWidth="0.5" 
                                     strokeDasharray="2,2"
                                   />
                                   <text 
-                                    x={width - 15} 
+                                    x={axisLabelX}
                                     y={yCoord - 3} 
                                     className="text-[7px] font-mono fill-white text-right"
+                                    textAnchor="end"
                                   >
                                     {gridVal}%
                                   </text>
@@ -2039,9 +2034,9 @@ export default function RitualDashboard({
 
                             {/* Clickable Overlay Columns across full SVG height */}
                             {points.map((p) => {
-                              const colWidth = daysCount === 7 
-                                ? (260 / 6)
-                                : (280 / (daysCount - 1));
+                              const colWidth = daysCount > 1
+                                ? chartWidth / (daysCount - 1)
+                                : chartWidth;
                               return (
                                 <rect 
                                   key={`click-${p.dateStr}`}
@@ -2257,6 +2252,34 @@ export default function RitualDashboard({
         status={healthConnectStep}
       />
 
+      <TimePickerModal
+        isOpen={showEditTimePicker}
+        title="Время практики"
+        subtitle="Выберите, когда напомнить о ритуале"
+        value={editTime}
+        defaultValue="08:00"
+        minuteStep={5}
+        onClose={() => setShowEditTimePicker(false)}
+        onConfirm={(value) => {
+          setEditTime(value);
+          setShowEditTimePicker(false);
+        }}
+      />
+
+      <TimePickerModal
+        isOpen={showNewTimePicker}
+        title="Новый слот"
+        subtitle="Время появится в таймлайне дня"
+        value={newSlotTime}
+        defaultValue="14:00"
+        minuteStep={5}
+        onClose={() => setShowNewTimePicker(false)}
+        onConfirm={(value) => {
+          setNewSlotTime(value);
+          setShowNewTimePicker(false);
+        }}
+      />
+
       <SelectModal
         isOpen={showEditPracticeModal}
         onClose={() => setShowEditPracticeModal(false)}
@@ -2396,12 +2419,19 @@ export default function RitualDashboard({
                     const todayStr = getTodayDateString();
                     localStorage.setItem('ritual_day_focus', selectedText);
                     localStorage.setItem('ritual_day_focus_date', todayStr);
+                    const presetId = isCustomInput ? null : getPresetIntentionId(selectedText);
+                    if (presetId) {
+                      localStorage.setItem('ritual_day_focus_preset_id', presetId);
+                    } else {
+                      localStorage.removeItem('ritual_day_focus_preset_id');
+                    }
                     setFocusDate(todayStr);
                     // Clear previous evening reflection when setting new intention
                     localStorage.removeItem('ritual_reflection_date');
                     localStorage.removeItem('ritual_reflection_answer');
                     localStorage.removeItem('ritual_reflection_reaction');
                     setReflection({ answer: null, reactionText: '' });
+                    requestPrivacySafeSync();
                   }
                   setIsIntentionModalOpen(false);
                 }}

@@ -46,7 +46,7 @@ export default function CompletionScreen({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 1 }}
-      className="flex flex-col items-center justify-between w-full min-h-[480px] p-6 text-center select-none relative"
+      className="flex flex-col items-center justify-between w-full min-h-[calc(100vh-4rem)] py-10 px-2 text-center select-none relative"
     >
       
       {/* ─── ATMOSPHERIC BACKGROUND BLUR ─── */}
@@ -164,7 +164,7 @@ export default function CompletionScreen({
       </div>
 
       {/* ─── ACTION BUTTON ─── */}
-      <div className="w-full max-w-sm px-6 z-10 mt-auto pb-2">
+      <div className="w-full max-w-sm z-10 mt-auto pb-2">
         <button
           onClick={onGoHome}
           className="w-full py-4 rounded-2xl text-xs font-semibold tracking-[0.2em] active:scale-95 transition-all text-white border border-white/5 backdrop-blur-xl bg-white/[0.02] hover:bg-white/[0.06] shadow-2xl uppercase"

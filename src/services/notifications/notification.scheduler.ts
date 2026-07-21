@@ -1,6 +1,39 @@
 import { notificationService } from './notification.service';
 import { NotificationType, STORAGE_KEYS } from './notification.types';
 
+function getNextOccurrenceTime(targetTimeStr: string, isCompleted: boolean, now = new Date()): Date {
+  const today = now.toISOString().split('T')[0];
+  const targetTime = new Date(`${today}T${targetTimeStr}:00`);
+  
+  if (isCompleted) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const tomorrowTime = new Date(`${tomorrow.toISOString().split('T')[0]}T${targetTimeStr}:00`);
+    return tomorrowTime;
+  }
+  
+  if (targetTime > now) {
+    return targetTime;
+  }
+  
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const tomorrowTime = new Date(`${tomorrow.toISOString().split('T')[0]}T${targetTimeStr}:00`);
+  return tomorrowTime;
+}
+
+function getTimeToNextNotification(targetTime: Date, isCompleted: boolean): number {
+  const now = new Date();
+  const nextTarget = getNextOccurrenceTime(
+    `${targetTime.getHours().toString().padStart(2, '0')}:${targetTime.getMinutes().toString().padStart(2, '0')}`, 
+    isCompleted, 
+    now
+  );
+  
+  const diff = nextTarget.getTime() - now.getTime();
+  return diff > 0 ? diff / 1000 : 0;
+}
+
 let reschedulePromise: Promise<void> | null = null;
 
 function todayKey(): string {
@@ -16,12 +49,52 @@ function stableNotificationId(key: string): number {
   return Math.abs(hash % 1000000000) + 100000;
 }
 
+const MANAGED_REMINDER_TYPES = new Set<string>([
+  NotificationType.PracticeReminder,
+  NotificationType.PracticeSoon,
+  NotificationType.StreakWarning,
+  NotificationType.IntentionReminder,
+  NotificationType.FocusBreak,
+  NotificationType.SessionComplete,
+  NotificationType.HealthInsight,
+  NotificationType.SocialInvite,
+  NotificationType.SubscriptionExpiring,
+]);
+
 function getTimelineSlots(): { id: string; time: string; practiceId: string }[] {
   try {
     return JSON.parse(localStorage.getItem('ritual_day_slots') || '[]');
   } catch {
     return [];
   }
+}
+
+function getStoredManagedReminderIds(): number[] {
+  try {
+    const scheduled = JSON.parse(localStorage.getItem(STORAGE_KEYS.scheduled) || '[]');
+    if (!Array.isArray(scheduled)) return [];
+
+    return scheduled
+      .filter((notification: any) => MANAGED_REMINDER_TYPES.has(String(notification.type)))
+      .map((notification: any) => Number(notification.id))
+      .filter(Number.isFinite);
+  } catch {
+    return [];
+  }
+}
+
+function getManagedReminderIds(): number[] {
+  const slotIds = getTimelineSlots().flatMap((slot) => [
+    stableNotificationId(`practice:${slot.id}`),
+    stableNotificationId(`practice-soon:${slot.id}`),
+  ]);
+
+  return [
+    ...getStoredManagedReminderIds(),
+    ...slotIds,
+    stableNotificationId('streak-warning'),
+    stableNotificationId('intention-reminder'),
+  ];
 }
 
 function getCompletedSlots(): Record<string, boolean> {
@@ -66,6 +139,7 @@ function subtractMinutesFromTime(timeHHMM: string, minutesToSubtract: number): s
 export async function scheduleTimelineReminders(): Promise<void> {
   const slots = getTimelineSlots();
   const completed = getCompletedSlots();
+  const now = new Date();
 
   for (const slot of slots) {
     if (!slot.practiceId) continue;
@@ -73,9 +147,28 @@ export async function scheduleTimelineReminders(): Promise<void> {
     const practiceName = getPracticeName(slot.practiceId);
     const isCompleted = !!completed[slot.id];
 
-    // If completed today, schedule a one-shot reminder for tomorrow (repeats = false)
-    // If NOT completed, schedule a repeating daily reminder (repeats = true)
-    await notificationService.scheduleAtTime(
+    // If already completed today, no reminders for this slot
+    if (isCompleted) {
+      continue;
+    }
+
+    // Calculate delay with threshold protection
+    const slotDateTime = new Date(`${now.toISOString().split('T')[0]}T${slot.time}:00`);
+    const nowTime = new Date();
+    const delayMinutes = Math.floor((slotDateTime.getTime() - nowTime.getTime()) / (1000 * 60));
+    
+    // Apply threshold protection: if less than 30 minutes until reminder, schedule sooner
+    const adjustedDelay = Math.max(60, Math.min(delayMinutes, 7 * 24 * 60)); // Cap at 7 days
+    const reminderDelay = adjustedDelay * 60;
+    
+    // Apply threshold protection for practice soon reminders
+    const soonTime = subtractMinutesFromTime(slot.time, 7);
+    const soonDateTime = new Date(`${now.toISOString().split('T')[0]}T${soonTime}:00`);
+    const soonDelayMinutes = Math.floor((soonDateTime.getTime() - nowTime.getTime()) / (1000 * 60));
+    const adjustedSoonDelay = Math.max(420, Math.min(soonDelayMinutes, 7 * 24 * 60));
+    const soonDelay = adjustedSoonDelay * 60;
+
+    await notificationService.scheduleLocal(
       {
         id: stableNotificationId(`practice:${slot.id}`),
         type: NotificationType.PracticeReminder,
@@ -83,13 +176,10 @@ export async function scheduleTimelineReminders(): Promise<void> {
         body: `Сегодня: ${practiceName}`,
         data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
       },
-      slot.time,
-      !isCompleted,
+      reminderDelay,
     );
 
-    // Same for the 7 minutes warning
-    const soonTime = subtractMinutesFromTime(slot.time, 7);
-    await notificationService.scheduleAtTime(
+    await notificationService.scheduleLocal(
       {
         id: stableNotificationId(`practice-soon:${slot.id}`),
         type: NotificationType.PracticeSoon,
@@ -97,8 +187,7 @@ export async function scheduleTimelineReminders(): Promise<void> {
         body: `Через 7 минут начнется практика: ${practiceName}`,
         data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
       },
-      soonTime,
-      !isCompleted,
+      soonDelay,
     );
   }
 }
@@ -121,9 +210,35 @@ export async function scheduleStreakReminder(): Promise<void> {
   const history = stats.history || [];
   const completedToday = history.some((h: any) => h.date && h.date.startsWith('Сегодня'));
 
-  // If already completed today, schedule a one-shot warning for tomorrow (repeats = false)
-  // If not completed today, schedule a repeating daily warning starting today (repeats = true)
-  await notificationService.scheduleAtTime(
+  // If already completed today, schedule a one-shot warning for tomorrow
+  if (completedToday) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const targetTime = new Date(`${tomorrow.toISOString().split('T')[0]}T${reminderTime}:00`);
+    const delay = (targetTime.getTime() - new Date().getTime()) / 1000;
+    if (delay > 0) {
+      await notificationService.scheduleLocal(
+        {
+          id: stableNotificationId('streak-warning'),
+          type: NotificationType.StreakWarning,
+          title: 'Не прерывайте серию!',
+          body: 'Сегодня вы ещё не практиковались. Не теряйте свой прогресс!',
+          data: { screen: 'Dashboard' },
+        },
+        delay,
+      );
+    }
+    return;
+  }
+
+  // If not completed today, schedule a daily repeating warning
+  const now = new Date();
+  const targetTime = new Date(`${now.toISOString().split('T')[0]}T${reminderTime}:00`);
+  if (targetTime <= now) {
+    targetTime.setDate(targetTime.getDate() + 1);
+  }
+  const delay = (targetTime.getTime() - now.getTime()) / 1000;
+  await notificationService.scheduleLocal(
     {
       id: stableNotificationId('streak-warning'),
       type: NotificationType.StreakWarning,
@@ -131,12 +246,12 @@ export async function scheduleStreakReminder(): Promise<void> {
       body: 'Сегодня вы ещё не практиковались. Не теряйте свой прогресс!',
       data: { screen: 'Dashboard' },
     },
-    reminderTime,
-    !completedToday,
+    delay,
   );
 }
 
 export async function scheduleFocusBreak(workMinutes: number): Promise<number | null> {
+  const delay = workMinutes * 60;
   return notificationService.scheduleLocal(
     {
       type: NotificationType.FocusBreak,
@@ -144,7 +259,7 @@ export async function scheduleFocusBreak(workMinutes: number): Promise<number | 
       body: `Вы поработали ${workMinutes} минут. Отдохните!`,
       data: { screen: 'FocusTool' },
     },
-    workMinutes * 60,
+    delay,
   );
 }
 
@@ -208,7 +323,13 @@ export async function scheduleSubscriptionWarning(daysLeft: number): Promise<num
 }
 
 export async function scheduleIntentionReminder(): Promise<void> {
-  await notificationService.scheduleAtTime(
+  const now = new Date();
+  const targetTime = new Date(`${now.toISOString().split('T')[0]}T07:00:00`);
+  if (targetTime <= now) {
+    targetTime.setDate(targetTime.getDate() + 1);
+  }
+  const delay = (targetTime.getTime() - now.getTime()) / 1000;
+  await notificationService.scheduleLocal(
     {
       id: stableNotificationId('intention-reminder'),
       type: NotificationType.IntentionReminder,
@@ -216,8 +337,7 @@ export async function scheduleIntentionReminder(): Promise<void> {
       body: 'Пора выбрать намерение на день, чтобы настроить фокус и сохранить осознанность.',
       data: { screen: 'Dashboard' },
     },
-    '07:00',
-    true, // Repeating daily
+    delay,
   );
 }
 
@@ -225,13 +345,18 @@ export async function rescheduleAll(): Promise<void> {
   if (reschedulePromise) return reschedulePromise;
 
   reschedulePromise = (async () => {
-    await notificationService.rescheduleAll();
+    await notificationService.rescheduleAll(getManagedReminderIds());
     if (!notificationService.isNotificationsEnabled()) return;
-    if (notificationService.isNative() && !await notificationService.checkPermission()) return;
+    if (!await notificationService.ensureReady()) return;
 
     await scheduleTimelineReminders();
     await scheduleStreakReminder();
     await scheduleIntentionReminder();
+    await scheduleFocusBreak();
+    await scheduleSessionComplete();
+    await scheduleHealthInsight();
+    await scheduleSocialInvite();
+    await scheduleSubscriptionWarning();
   })().finally(() => {
     reschedulePromise = null;
   });

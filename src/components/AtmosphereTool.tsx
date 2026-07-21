@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, HelpCircle, Play, Pause, Volume2, Sun, Clock, Heart, Sparkles, X } from 'lucide-react';
 import { scheduleSessionComplete } from '../services/notifications';
 import { audioEngine } from '../services/audioEngine';
+import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 
 interface AtmosphereToolProps {
   onClose: () => void;
@@ -262,6 +263,7 @@ export default function AtmosphereTool({ onClose, color = '#fb7185' }: Atmospher
     }
     setFavorites(updated);
     localStorage.setItem('ritual_atmosphere_favorites', JSON.stringify(updated));
+    requestPrivacySafeSync();
   };
 
   const formatTime = (totalSeconds: number) => {

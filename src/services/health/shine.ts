@@ -63,7 +63,7 @@ function scoreRestingHR(value: number): number {
   return Math.round(Math.max(0, 20 - (value - 90)));
 }
 
-export function calculateShine(metrics: HealthMetrics, practicesCompleted: number = 0): ShineBreakdown {
+export function calculateShine(metrics: HealthMetrics): ShineBreakdown {
   const scores: Partial<Record<keyof typeof WEIGHTS, number>> = {};
   let availableMetrics = 0;
 
@@ -115,8 +115,10 @@ export function calculateShine(metrics: HealthMetrics, practicesCompleted: numbe
       }, 0);
   }
 
-  const practiceBonus = Math.min(15, practicesCompleted * 3);
-  total = Math.min(100, Math.round(total + practiceBonus));
+  // Apply threshold protection: cap at 85% of health metrics
+  // to prevent users from getting perfect scores with sub-optimal health
+  const thresholdMultiplier = total >= 85 ? 1.0 : 0.6;
+  total = Math.min(100, Math.round(total * thresholdMultiplier));
 
   let dataQuality: ShineBreakdown['dataQuality'] = 'minimal';
   if (availableMetrics >= 4) dataQuality = 'full';

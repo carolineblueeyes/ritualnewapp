@@ -1,7 +1,5 @@
 package com.ritual.app;
 
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -11,38 +9,27 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
-    private static final String CHANNEL_ID = "ritual-reminders";
-    private static final String CHANNEL_NAME = "Напоминания Ritual";
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        createNotificationChannel();
+        disableWebViewScrollbars();
         hideSystemUI();
         new Handler(Looper.getMainLooper()).postDelayed(this::hideSystemUI, 600);
         new Handler(Looper.getMainLooper()).postDelayed(this::hideSystemUI, 1500);
     }
 
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH
-            );
-            channel.setDescription("Ежедневные напоминания о практиках и здоровье");
-            channel.enableVibration(true);
-            channel.setVibrationPattern(new long[]{0, 250, 250, 250});
+    private void disableWebViewScrollbars() {
+        WebView webView = getBridge().getWebView();
+        if (webView == null) return;
 
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
-        }
+        webView.setVerticalScrollBarEnabled(false);
+        webView.setHorizontalScrollBarEnabled(false);
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
     }
 
     @Override
