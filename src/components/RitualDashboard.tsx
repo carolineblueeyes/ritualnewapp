@@ -184,8 +184,6 @@ export default function RitualDashboard({
     return localStorage.getItem('ritual_day_focus_date') || '';
   });
 
-  const isFocusLockedToday = focusDate === getTodayDateString();
-
   const [dailyFocus, setDailyFocus] = useState<string>(() => {
     const savedDate = localStorage.getItem('ritual_day_focus_date') || '';
     const savedFocus = localStorage.getItem('ritual_day_focus') || '';
@@ -194,6 +192,7 @@ export default function RitualDashboard({
     }
     return ''; // Reset to empty if a new day has arrived
   });
+  const isFocusLockedToday = focusDate === getTodayDateString() && dailyFocus.trim().length > 0;
   const [isEditingFocus, setIsEditingFocus] = useState(false);
 
   // States for the Intention Modal
@@ -218,7 +217,7 @@ export default function RitualDashboard({
 
   const now = new Date();
   const isEvening = now.getHours() >= 20; // after 20:00
-  const showReflectionCard = !!(isEvening && dailyFocus);
+  const showReflectionCard = !!(isEvening && isFocusLockedToday);
 
   const openIntentionModal = () => {
     const isHigh = shineScore >= 60;
@@ -272,23 +271,6 @@ export default function RitualDashboard({
     localStorage.setItem('ritual_reflection_reaction', chosenReaction);
 
     setReflection({ answer: choice, reactionText: chosenReaction });
-    requestPrivacySafeSync();
-  };
-
-  const handleSmartIntention = () => {
-    if (isFocusLockedToday) return;
-
-    const isHigh = shineScore >= 60;
-    const pool = isHigh ? INTENTIONS_HIGH : INTENTIONS_LOW;
-    const randomIndex = Math.floor(Math.random() * pool.length);
-    const chosenText = pool[randomIndex];
-    
-    setDailyFocus(chosenText);
-    const todayStr = getTodayDateString();
-    localStorage.setItem('ritual_day_focus', chosenText);
-    localStorage.setItem('ritual_day_focus_date', todayStr);
-    localStorage.setItem('ritual_day_focus_preset_id', getPresetIntentionId(chosenText) ?? `${isHigh ? 'high' : 'low'}_${randomIndex}`);
-    setFocusDate(todayStr);
     requestPrivacySafeSync();
   };
 
@@ -571,7 +553,11 @@ export default function RitualDashboard({
 
   const userGender = typeof window !== 'undefined' ? (localStorage.getItem('ritual_user_gender') || 'unspecified') : 'unspecified';
 
-  useEffect(() => { localStorage.setItem('ritual_day_focus', dailyFocus); }, [dailyFocus]);
+  useEffect(() => {
+    if (isFocusLockedToday) {
+      localStorage.setItem('ritual_day_focus', dailyFocus);
+    }
+  }, [dailyFocus, isFocusLockedToday]);
   useEffect(() => {
     localStorage.setItem('ritual_day_slots', JSON.stringify(slots));
     rescheduleAll().catch(e => console.warn('[RitualDashboard] Failed to reschedule:', e));

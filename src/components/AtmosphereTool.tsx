@@ -121,7 +121,7 @@ const RECOVERY_ZONES: RecoveryZone[] = [
   { id: 'nodata', title: 'Нет данных', range: '--', glowColor: '#7A9BBA', description: 'Холодное голубое статичное свечение' }
 ];
 
-export default function AtmosphereTool({ onClose, color = '#fb7185' }: AtmosphereToolProps) {
+export default function AtmosphereTool({ onClose, color = '#fb7185', onSessionComplete }: AtmosphereToolProps) {
   const [selectedId, setSelectedId] = useState('relax');
   const [isPlaying, setIsPlaying] = useState(false);
   const [isActive, setIsActive] = useState(false);

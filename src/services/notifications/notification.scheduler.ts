@@ -1,39 +1,6 @@
 import { notificationService } from './notification.service';
 import { NotificationType, STORAGE_KEYS } from './notification.types';
 
-function getNextOccurrenceTime(targetTimeStr: string, isCompleted: boolean, now = new Date()): Date {
-  const today = now.toISOString().split('T')[0];
-  const targetTime = new Date(`${today}T${targetTimeStr}:00`);
-  
-  if (isCompleted) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(now.getDate() + 1);
-    const tomorrowTime = new Date(`${tomorrow.toISOString().split('T')[0]}T${targetTimeStr}:00`);
-    return tomorrowTime;
-  }
-  
-  if (targetTime > now) {
-    return targetTime;
-  }
-  
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  const tomorrowTime = new Date(`${tomorrow.toISOString().split('T')[0]}T${targetTimeStr}:00`);
-  return tomorrowTime;
-}
-
-function getTimeToNextNotification(targetTime: Date, isCompleted: boolean): number {
-  const now = new Date();
-  const nextTarget = getNextOccurrenceTime(
-    `${targetTime.getHours().toString().padStart(2, '0')}:${targetTime.getMinutes().toString().padStart(2, '0')}`, 
-    isCompleted, 
-    now
-  );
-  
-  const diff = nextTarget.getTime() - now.getTime();
-  return diff > 0 ? diff / 1000 : 0;
-}
-
 let reschedulePromise: Promise<void> | null = null;
 
 function todayKey(): string {
@@ -125,6 +92,16 @@ function getPracticeName(practiceId: string): string {
   }
 }
 
+function parseTodayTime(timeHHMM: string, now = new Date()): Date | null {
+  const [hours, minutes] = timeHHMM.split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
+  const target = new Date(now);
+  target.setHours(hours, minutes, 0, 0);
+  return target;
+}
+
 function subtractMinutesFromTime(timeHHMM: string, minutesToSubtract: number): string {
   const [h, m] = timeHHMM.split(':').map(Number);
   let totalMinutes = h * 60 + m - minutesToSubtract;
@@ -142,7 +119,7 @@ export async function scheduleTimelineReminders(): Promise<void> {
   const now = new Date();
 
   for (const slot of slots) {
-    if (!slot.practiceId) continue;
+    if (!slot.practiceId || !slot.time) continue;
 
     const practiceName = getPracticeName(slot.practiceId);
     const isCompleted = !!completed[slot.id];
@@ -152,23 +129,15 @@ export async function scheduleTimelineReminders(): Promise<void> {
       continue;
     }
 
-    // Calculate delay with threshold protection
-    const slotDateTime = new Date(`${now.toISOString().split('T')[0]}T${slot.time}:00`);
-    const nowTime = new Date();
-    const delayMinutes = Math.floor((slotDateTime.getTime() - nowTime.getTime()) / (1000 * 60));
-    
-    // Apply threshold protection: if less than 30 minutes until reminder, schedule sooner
-    const adjustedDelay = Math.max(60, Math.min(delayMinutes, 7 * 24 * 60)); // Cap at 7 days
-    const reminderDelay = adjustedDelay * 60;
-    
-    // Apply threshold protection for practice soon reminders
-    const soonTime = subtractMinutesFromTime(slot.time, 7);
-    const soonDateTime = new Date(`${now.toISOString().split('T')[0]}T${soonTime}:00`);
-    const soonDelayMinutes = Math.floor((soonDateTime.getTime() - nowTime.getTime()) / (1000 * 60));
-    const adjustedSoonDelay = Math.max(420, Math.min(soonDelayMinutes, 7 * 24 * 60));
-    const soonDelay = adjustedSoonDelay * 60;
+    const slotDateTime = parseTodayTime(slot.time, now);
+    if (!slotDateTime || slotDateTime <= now) {
+      continue;
+    }
 
-    await notificationService.scheduleLocal(
+    const soonTime = subtractMinutesFromTime(slot.time, 7);
+    const soonDateTime = parseTodayTime(soonTime, now);
+
+    await notificationService.scheduleAtDate(
       {
         id: stableNotificationId(`practice:${slot.id}`),
         type: NotificationType.PracticeReminder,
@@ -176,19 +145,21 @@ export async function scheduleTimelineReminders(): Promise<void> {
         body: `Сегодня: ${practiceName}`,
         data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
       },
-      reminderDelay,
+      slotDateTime,
     );
 
-    await notificationService.scheduleLocal(
-      {
-        id: stableNotificationId(`practice-soon:${slot.id}`),
-        type: NotificationType.PracticeSoon,
-        title: 'Скоро начало практики',
-        body: `Через 7 минут начнется практика: ${practiceName}`,
-        data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
-      },
-      soonDelay,
-    );
+    if (soonDateTime && soonDateTime > now) {
+      await notificationService.scheduleAtDate(
+        {
+          id: stableNotificationId(`practice-soon:${slot.id}`),
+          type: NotificationType.PracticeSoon,
+          title: 'Скоро начало практики',
+          body: `Через 7 минут начнется практика: ${practiceName}`,
+          data: { practiceId: slot.practiceId, slotId: slot.id, screen: 'PracticePlayer' },
+        },
+        soonDateTime,
+      );
+    }
   }
 }
 
@@ -251,6 +222,8 @@ export async function scheduleStreakReminder(): Promise<void> {
 }
 
 export async function scheduleFocusBreak(workMinutes: number): Promise<number | null> {
+  if (!Number.isFinite(workMinutes) || workMinutes <= 0) return null;
+
   const delay = workMinutes * 60;
   return notificationService.scheduleLocal(
     {
@@ -264,6 +237,8 @@ export async function scheduleFocusBreak(workMinutes: number): Promise<number | 
 }
 
 export async function scheduleSessionComplete(type: string, durationMin: number): Promise<number | null> {
+  if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
+
   const label = type === 'breathing' ? 'Дыхание' : 'Атмосфера';
   return notificationService.scheduleLocal(
     {
@@ -277,6 +252,8 @@ export async function scheduleSessionComplete(type: string, durationMin: number)
 }
 
 export async function scheduleHealthInsight(hrvChange: number): Promise<number | null> {
+  if (!Number.isFinite(hrvChange) || hrvChange === 0) return null;
+
   const lastDate = localStorage.getItem(STORAGE_KEYS.lastHealthPush);
   if (lastDate === todayKey()) return null;
 
@@ -311,6 +288,8 @@ export async function scheduleSocialInvite(): Promise<number | null> {
 }
 
 export async function scheduleSubscriptionWarning(daysLeft: number): Promise<number | null> {
+  if (!Number.isFinite(daysLeft) || daysLeft <= 0) return null;
+
   return notificationService.scheduleLocal(
     {
       type: NotificationType.SubscriptionExpiring,
@@ -345,18 +324,13 @@ export async function rescheduleAll(): Promise<void> {
   if (reschedulePromise) return reschedulePromise;
 
   reschedulePromise = (async () => {
-    await notificationService.rescheduleAll(getManagedReminderIds());
+    await notificationService.rescheduleAll(getManagedReminderIds(), MANAGED_REMINDER_TYPES);
     if (!notificationService.isNotificationsEnabled()) return;
     if (!await notificationService.ensureReady()) return;
 
     await scheduleTimelineReminders();
     await scheduleStreakReminder();
     await scheduleIntentionReminder();
-    await scheduleFocusBreak();
-    await scheduleSessionComplete();
-    await scheduleHealthInsight();
-    await scheduleSocialInvite();
-    await scheduleSubscriptionWarning();
   })().finally(() => {
     reschedulePromise = null;
   });

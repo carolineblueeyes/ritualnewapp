@@ -63,7 +63,7 @@ function scoreRestingHR(value: number): number {
   return Math.round(Math.max(0, 20 - (value - 90)));
 }
 
-export function calculateShine(metrics: HealthMetrics): ShineBreakdown {
+export function calculateShine(metrics: HealthMetrics, _practicesCompleted = 0): ShineBreakdown {
   const scores: Partial<Record<keyof typeof WEIGHTS, number>> = {};
   let availableMetrics = 0;
 
@@ -102,23 +102,13 @@ export function calculateShine(metrics: HealthMetrics): ShineBreakdown {
     };
   }
 
-  const totalWeight = Object.entries(WEIGHTS)
-    .filter(([key]) => scores[key as keyof typeof WEIGHTS] !== undefined)
-    .reduce((sum, [key, weight]) => sum + weight, 0);
-
-  let total = 0;
-  if (totalWeight > 0) {
-    total = Object.entries(WEIGHTS)
+  const total = Math.min(100, Math.round(
+    Object.entries(WEIGHTS)
       .filter(([key]) => scores[key as keyof typeof WEIGHTS] !== undefined)
       .reduce((sum, [key, weight]) => {
-        return sum + (scores[key as keyof typeof WEIGHTS]! * weight) / totalWeight;
-      }, 0);
-  }
-
-  // Apply threshold protection: cap at 85% of health metrics
-  // to prevent users from getting perfect scores with sub-optimal health
-  const thresholdMultiplier = total >= 85 ? 1.0 : 0.6;
-  total = Math.min(100, Math.round(total * thresholdMultiplier));
+        return sum + (scores[key as keyof typeof WEIGHTS]! * weight) / 100;
+      }, 0)
+  ));
 
   let dataQuality: ShineBreakdown['dataQuality'] = 'minimal';
   if (availableMetrics >= 4) dataQuality = 'full';
