@@ -27,6 +27,8 @@ import ActivityTool from './components/ActivityTool';
 import FocusTool from './components/FocusTool';
 import AtmosphereTool from './components/AtmosphereTool';
 
+import { scheduleSessionComplete } from './services/notifications';
+
 interface PracticeLaunchContext {
   timelineSlotId?: string;
 }
@@ -221,6 +223,7 @@ export default function App() {
 
   const [showSubscription, setShowSubscription] = useState(false);
   const [activeTool, setActiveTool] = useState<'breathing' | 'activity' | 'focus' | 'atmosphere' | null>(null);
+  const [activeAtmosphereDuration, setActiveAtmosphereDuration] = useState<number>(0);
 
   const [selectedPractice, setSelectedPractice] = useState<Practice | null>(null);
   const [selectedTimelineSlotId, setSelectedTimelineSlotId] = useState<string | null>(null);
@@ -769,7 +772,10 @@ export default function App() {
           />
         )}
         {activeTool === 'atmosphere' && (
-          <AtmosphereTool onClose={() => setActiveTool(null)} />
+          <AtmosphereTool 
+            onClose={() => setActiveTool(null)} 
+            onAddMinutes={addPracticeMinutes}
+          />
         )}
       </AnimatePresence>
 

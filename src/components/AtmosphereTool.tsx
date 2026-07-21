@@ -8,6 +8,8 @@ import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 interface AtmosphereToolProps {
   onClose: () => void;
   color?: string;
+  onAddMinutes?: (mins: number, practiceId: string, title: string) => void;
+  onSessionComplete?: (practiceType: string, duration: number) => void;
 }
 
 interface Soundscape {
@@ -208,6 +210,10 @@ export default function AtmosphereTool({ onClose, color = '#fb7185' }: Atmospher
             
             const totalMin = Math.floor((1200 - 0) / 60);
             scheduleSessionComplete('atmosphere', totalMin);
+            
+            // Call parent completion callback for practice tracking
+            onSessionComplete?.('atmosphere', totalMin);
+            
             return 0;
           }
 
@@ -228,7 +234,7 @@ export default function AtmosphereTool({ onClose, color = '#fb7185' }: Atmospher
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isPlaying, isActive]);
+  }, [isPlaying, isActive, onSessionComplete]);
 
   const togglePlay = () => {
     triggerHaptic('medium');

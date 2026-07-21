@@ -1,5 +1,5 @@
 import { NotificationPayload, STORAGE_KEYS } from './notification.types';
-import { getSupabaseAccessToken } from '../supabase/client';
+import { supabase } from '../supabase/client';
 
 let initialized = false;
 let FirebaseMessaging: any = null;
@@ -136,18 +136,6 @@ function getPlatform(): PushPlatform {
   }
 }
 
-function getApiBaseUrl(): string | null {
-  const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-  if (apiBaseUrl) return apiBaseUrl;
-
-  if (isNative()) {
-    console.warn('[NotificationService] VITE_API_URL is not configured; push token will stay local and remote push cannot target this install.');
-    return null;
-  }
-
-  return '';
-}
-
 function getInstallationId(): string {
   const existing = localStorage.getItem(PUSH_INSTALLATION_ID_KEY);
   if (existing) return existing;
@@ -167,31 +155,21 @@ function extractNotificationData(notification: any): Record<string, string> {
 }
 
 async function sendPushTokenToBackend(token: string): Promise<PushRegistrationResult> {
-  const apiBaseUrl = getApiBaseUrl();
   const installationId = getInstallationId();
   const platform = getPlatform();
-  const accessToken = await getSupabaseAccessToken();
 
   localStorage.setItem(PUSH_TOKEN_KEY, token);
 
-  if (apiBaseUrl === null) {
-    return { ok: false, status: 'pushBackendUnavailable', token };
-  }
-  if (!accessToken) {
+  if (!supabase) {
     return { ok: false, status: 'pushBackendUnavailable', token };
   }
 
-  const response = await fetch(`${apiBaseUrl}/api/notifications/push-token`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ installationId, token, platform }),
+  const { error } = await supabase.functions.invoke('register-push-token', {
+    body: { installationId, token, platform },
   });
 
-  if (!response.ok) {
-    throw new Error(`Push token registration failed with ${response.status}`);
+  if (error) {
+    throw new Error(`Push token registration failed: ${error.message}`);
   }
 
   return { ok: true, status: 'registered', token };
