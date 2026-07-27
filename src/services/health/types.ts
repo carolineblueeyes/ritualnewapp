@@ -24,6 +24,11 @@ export interface HealthMetrics {
   spo2: number | null;
   temperature: number | null;
   respiratoryRate: number | null;
+  distance?: number | null;
+  calories?: number | null;
+  activeMinutes?: number | null;
+  batteryLevel?: number | null;
+  dataFreshness?: string | null;
   source: HealthSource;
   lastSync: string | null;
 }

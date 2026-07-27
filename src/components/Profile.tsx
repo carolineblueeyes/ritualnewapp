@@ -6,6 +6,7 @@ import {
   RefreshCw, Battery, Cpu, AlertCircle, Activity, Sparkles, ShoppingBag, Clock
 } from 'lucide-react';
 import { bleRingService } from '../services/health/ring';
+import type { RingDeviceInfo } from '../services/health/x6RingPlugin';
 import { clearHealthCache } from '../services/health/manager';
 import { connectHealthSource } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
@@ -13,6 +14,7 @@ import { notificationService, rescheduleAll } from '../services/notifications';
 import { STORAGE_KEYS } from '../services/notifications';
 import SelectModal from './SelectModal';
 import TimePickerModal, { normalizeTime } from './TimePickerModal';
+import RingConnectionWizard from './RingConnectionWizard';
 import { requestPrivacySafeSync, pullPreferencesFromSupabase } from '../services/supabase/privacySync';
 import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged, signOutAuth } from '../services/supabase/auth';
 
@@ -63,6 +65,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   const [showHealthConnectPermissions, setShowHealthConnectPermissions] = useState(false);
 
   const [livePulse, setLivePulse] = useState(64);
+  const [ringInfo, setRingInfo] = useState<RingDeviceInfo | null>(null);
   const [bleScanning, setBleScanning] = useState(false);
   const [discoveredDevices, setDiscoveredDevices] = useState<{name: string, mac: string, signal: number}[]>([]);
   const [connectingDevice, setConnectingDevice] = useState<string | null>(null);
@@ -126,15 +129,13 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   }, [isAnyModalOpen]);
 
   useEffect(() => {
-    if (!isBleRingConnected) return;
-    const interval = setInterval(() => {
-      setLivePulse(prev => {
-        const delta = Math.floor(Math.random() * 5) - 2;
-        const next = prev + delta;
-        return next < 55 ? 55 : next > 85 ? 85 : next;
-      });
-    }, 2000);
-    return () => clearInterval(interval);
+    if (!isBleRingConnected || !bleRingService.isAvailable()) return;
+    Promise.all([bleRingService.getDeviceInfo(), bleRingService.getDailySummary()])
+      .then(([info, summary]) => {
+        if (info) setRingInfo(info);
+        if (summary?.restingHR) setLivePulse(Math.round(summary.restingHR));
+      })
+      .catch(() => {});
   }, [isBleRingConnected]);
 
   const handleGenderChange = (newGender: string) => {
@@ -167,6 +168,8 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   };
 
   const handleRealBluetoothConnect = async () => {
+    setShowBleScanner(true);
+    return;
     if (!bleRingService.isAvailable()) {
       setShowBleScanner(true);
       setBleScanning(true);
@@ -193,10 +196,15 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   const connectSimulatedDevice = async (deviceAddress: string) => {
     setConnectingDevice(deviceAddress);
     if (bleRingService.isAvailable()) {
-      const ok = await bleRingService.connect(deviceAddress);
+      const selected = discoveredDevices.find(device => device.mac === deviceAddress);
+      setConnectingDevice('Соединяемся с кольцом');
+      const ok = await bleRingService.connect(deviceAddress, selected?.name || 'Ritual Ring');
       if (ok) {
+        setConnectingDevice('Загружаем историю и проверяем датчики');
         setIsBleRingConnected(true);
-        setConnectedRingName(deviceAddress);
+        const info = await bleRingService.getDeviceInfo();
+        setRingInfo(info);
+        setConnectedRingName(info?.name || selected?.name || 'Ritual Ring');
         if (onRefreshHealth) onRefreshHealth();
       }
     } else {
@@ -215,6 +223,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
     await bleRingService.disconnect();
     setIsBleRingConnected(false);
     setConnectedRingName('');
+    setRingInfo(null);
     clearHealthCache();
     if (onRefreshHealth) onRefreshHealth();
   };
@@ -460,7 +469,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
                 <Bluetooth className="w-4 h-4 text-white/40" />
               </div>
               <div className="flex flex-col">
-                <span className="text-xs font-medium text-white/60">Умное кольцо</span>
+                <span className="text-xs font-medium text-white/60">Ritual Ring</span>
                 <span className="text-[10px] text-white/50">
                   {isBleRingConnected ? connectedRingName : 'Bluetooth LE'}
                 </span>
@@ -494,11 +503,23 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
                 <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04] flex items-center justify-between text-[10px]">
                   <div className="flex items-center gap-2 text-white/40">
                     <Battery className="w-3.5 h-3.5" />
-                    <span>88%</span>
+                    <span>{ringInfo?.batteryLevel != null && ringInfo.batteryLevel >= 0 ? `${ringInfo.batteryLevel}%` : '—'}</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-white/50">
                     <Activity className="w-3 h-3" />
                     <span>{livePulse} уд/мин</span>
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[9px] text-white/35">
+                  <div className="rounded-lg bg-white/[0.02] px-2.5 py-2">
+                    <span className="block uppercase tracking-wider">Прошивка</span>
+                    <span className="mt-1 block text-[10px] text-white/55">{ringInfo?.firmwareVersion || '—'}</span>
+                  </div>
+                  <div className="rounded-lg bg-white/[0.02] px-2.5 py-2">
+                    <span className="block uppercase tracking-wider">Синхронизация</span>
+                    <span className="mt-1 block text-[10px] text-white/55">
+                      {ringInfo?.lastSync ? new Date(ringInfo.lastSync).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Ожидается'}
+                    </span>
                   </div>
                 </div>
               </motion.div>
@@ -509,7 +530,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
 
       {/* Ring CTA Banner */}
       <AnimatePresence initial={false}>
-        {healthSource === 'none' && (
+        {healthSource === 'none' && !isBleRingConnected && (
           <motion.div
             initial={{ height: 0, opacity: 0, scale: 0.95 }}
             animate={{ height: 'auto', opacity: 1, scale: 1 }}
@@ -758,7 +779,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
         )}
 
         {/* BLE Scanner Modal */}
-        {showBleScanner && (
+        {false && showBleScanner && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
           >
@@ -962,6 +983,19 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           </motion.div>
         )}
       </AnimatePresence>
+      <RingConnectionWizard
+        isOpen={showBleScanner}
+        onClose={() => setShowBleScanner(false)}
+        onConnected={async info => {
+          setIsBleRingConnected(true);
+          setConnectedRingName(info.name || 'Ritual Ring');
+          setRingInfo(info);
+          const summary = await bleRingService.getDailySummary();
+          if (summary?.restingHR) setLivePulse(Math.round(summary.restingHR));
+          clearHealthCache();
+          onRefreshHealth?.();
+        }}
+      />
     </div>
   );
 }

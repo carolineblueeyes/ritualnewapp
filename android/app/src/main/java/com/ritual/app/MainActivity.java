@@ -16,6 +16,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(X6RingPlugin.class);
         super.onCreate(savedInstanceState);
         disableWebViewScrollbars();
         hideSystemUI();

@@ -30,6 +30,24 @@ const CACHE_KEY = 'ritual_health_cache_v2';
 const HISTORY_KEY = 'ritual_health_history_v1';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+function normalizeDailyPoints(points: DailyHealthPoint[]): DailyHealthPoint[] {
+  const byDate = new Map<string, DailyHealthPoint>();
+  for (const point of points || []) {
+    const existing = byDate.get(point.date);
+    const shouldReplace = !existing
+      || (point.source === 'ring' && existing.source !== 'ring')
+      || (point.source === existing.source && (point.lastSync || '') >= (existing.lastSync || ''));
+    if (shouldReplace) byDate.set(point.date, point);
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-30);
+}
+
+function normalizeHistory(history: HealthHistoryByMetric): HealthHistoryByMetric {
+  return Object.fromEntries(
+    HEALTH_METRIC_KEYS.map(metric => [metric, normalizeDailyPoints(history?.[metric] || [])]),
+  ) as HealthHistoryByMetric;
+}
+
 function emptySnapshot(source: HealthMetrics['source'] = 'none'): HealthSnapshot {
   return {
     metrics: { ...EMPTY_METRICS, source },
@@ -56,6 +74,7 @@ function loadCache(): HealthSnapshot | null {
     if (!cached.lastSync) return null;
     const age = Date.now() - new Date(cached.lastSync).getTime();
     if (age > CACHE_TTL_MS) return null;
+    cached.historyByMetric = normalizeHistory(cached.historyByMetric);
     return cached;
   } catch {
     return null;
@@ -64,13 +83,16 @@ function loadCache(): HealthSnapshot | null {
 
 function saveCache(snapshot: HealthSnapshot) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(snapshot));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      ...snapshot,
+      historyByMetric: normalizeHistory(snapshot.historyByMetric),
+    }));
   } catch {}
 }
 
 function saveHistory(historyByMetric: HealthHistoryByMetric) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(historyByMetric));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(normalizeHistory(historyByMetric)));
   } catch {}
 }
 
@@ -78,7 +100,9 @@ function loadHistory(): HealthHistoryByMetric {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return { ...EMPTY_HISTORY_BY_METRIC };
-    return JSON.parse(raw);
+    const normalized = normalizeHistory(JSON.parse(raw));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(normalized));
+    return normalized;
   } catch {
     return { ...EMPTY_HISTORY_BY_METRIC };
   }
@@ -108,7 +132,7 @@ function pointForToday(metric: HealthMetricKey, value: number, source: HealthMet
     respiratoryRate: 'br/min',
   };
   return {
-    date: new Date().toISOString().slice(0, 10),
+    date: new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10),
     metric,
     value,
     unit: units[metric],
@@ -145,7 +169,10 @@ function mergeRingSnapshot(base: HealthSnapshot, ringMetrics: HealthMetrics): He
   for (const metric of HEALTH_METRIC_KEYS) {
     const value = ringValues[metric];
     if (value === null || value === undefined) continue;
-    historyByMetric[metric] = [...historyByMetric[metric], pointForToday(metric, value, 'ring', lastSync)].slice(-7);
+    historyByMetric[metric] = normalizeDailyPoints([
+      ...historyByMetric[metric],
+      pointForToday(metric, value, 'ring', lastSync),
+    ]);
     availabilityByMetric[metric] = 'available';
   }
 
@@ -156,10 +183,15 @@ function mergeRingSnapshot(base: HealthSnapshot, ringMetrics: HealthMetrics): He
   metrics.spo2 = latestValue(historyByMetric.spo2);
   metrics.temperature = latestValue(historyByMetric.temperature);
   metrics.respiratoryRate = latestValue(historyByMetric.respiratoryRate);
-  metrics.source = HEALTH_METRIC_KEYS.some(metric => ringValues[metric] !== null && ringValues[metric] !== undefined)
-    ? 'ring'
-    : base.metrics.source;
+  // A connected Ritual Ring remains the active source even before the first
+  // history packet arrives. Connection state must not depend on Health Connect.
+  metrics.source = 'ring';
   metrics.lastSync = lastSync;
+  metrics.distance = ringMetrics.distance ?? metrics.distance ?? null;
+  metrics.calories = ringMetrics.calories ?? metrics.calories ?? null;
+  metrics.activeMinutes = ringMetrics.activeMinutes ?? metrics.activeMinutes ?? null;
+  metrics.batteryLevel = ringMetrics.batteryLevel ?? metrics.batteryLevel ?? null;
+  metrics.dataFreshness = ringMetrics.dataFreshness ?? lastSync;
 
   return {
     metrics,
@@ -189,8 +221,9 @@ export function updateMetricsAfterPractice(_practiceId: string, _durationMinutes
 }
 
 export async function fetchHealthData(): Promise<CombinedHealthState> {
+  const hasRing = bleRingService.isAvailable() && bleRingService.isConnected();
   const cached = loadCache();
-  if (cached) {
+  if (cached && (!hasRing || cached.source === 'ring')) {
     return {
       snapshot: cached,
       metrics: cached.metrics,
@@ -203,8 +236,12 @@ export async function fetchHealthData(): Promise<CombinedHealthState> {
     };
   }
 
-  const hasRing = bleRingService.isAvailable() && bleRingService.isConnected();
-  const hasHealthApp = healthService.isNative() && await healthService.isAvailable();
+  const healthConnectionKey = healthService.getPlatform() === 'ios'
+    ? 'ritual_healthkit_connected'
+    : 'ritual_healthconnect_connected';
+  const hasHealthApp = healthService.isNative()
+    && localStorage.getItem(healthConnectionKey) === 'true'
+    && await healthService.isAvailable();
 
   let snapshot = hasHealthApp ? await healthService.getSnapshot(7) : emptySnapshot('none');
   if (!hasHealthApp) {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { App as CapApp } from '@capacitor/app';
 import {
   EMPTY_AVAILABILITY_BY_METRIC,
   EMPTY_HISTORY_BY_METRIC,
@@ -75,7 +76,21 @@ export function useHealthData(): UseHealthDataReturn {
   }, []);
 
   useEffect(() => {
-    load();
+    bleRingService.reconnectIfRemembered().finally(load);
+  }, [load]);
+
+  useEffect(() => {
+    const listener = CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive) return;
+      bleRingService.reconnectIfRemembered()
+        .then(isConnected => isConnected ? bleRingService.sync() : undefined)
+        .then(() => {
+          clearHealthCache();
+          return load();
+        })
+        .catch(error => console.warn('[useHealthData] Ritual Ring foreground sync failed:', error));
+    });
+    return () => { listener.then(handle => handle.remove()); };
   }, [load]);
 
   const refresh = useCallback(async () => {
