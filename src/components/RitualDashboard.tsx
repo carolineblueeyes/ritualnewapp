@@ -3,11 +3,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Play, Plus, Edit2, X, Check,
   Moon, Sun, Zap, Activity, Wind, Sparkle, Sparkles, Heart, Eye, Thermometer,
-  ShoppingBag, Smartphone, Lock, ChevronRight, BookOpen, Clock, ArrowLeft
+  ShoppingBag, Smartphone, Lock, ChevronRight, BookOpen, Clock, ArrowLeft, RefreshCw
 } from 'lucide-react';
 import { Practice, UserStats } from '../types';
 import QuickStartCard from './QuickStartCard';
 import RingPurchaseBanner from './RingPurchaseBanner';
+import RitualRingAnalytics from './RitualRingAnalytics';
 import ConnectHealthModal from './ConnectHealthModal';
 import SelectModal from './SelectModal';
 import TimePickerModal, { normalizeTime } from './TimePickerModal';
@@ -360,6 +361,7 @@ export default function RitualDashboard({
     metrics: dashboardHealthMetrics,
     historyByMetric: dashboardHistoryByMetric,
     availabilityByMetric: dashboardAvailabilityByMetric,
+    hasRing: dashboardHasRing,
     refresh: refreshDashboardHealth
   } = useHealthData();
 
@@ -789,7 +791,7 @@ export default function RitualDashboard({
 
             {/* ===== RING PURCHASE BANNER ===== */}
             <RingPurchaseBanner
-              source={healthSource ?? 'none'}
+              source={dashboardHasRing ? 'ring' : (healthSource ?? 'none')}
               onConnect={handleConnectHealth}
               onBuyRing={() => window.open('https://ritual.store', '_blank')}
             />
@@ -1218,7 +1220,7 @@ export default function RitualDashboard({
                       <button onClick={() => setShowNarrative(false)} className={`flex-1 py-1.5 rounded-full text-[10px] transition-all ${!showNarrative ? 'bg-white/10 text-white/90 font-medium' : 'text-white/60'}`}>Статистика</button>
                     </div>
 
-                    {healthSource === 'none' && (
+                    {healthSource === 'none' && !dashboardHasRing && (
                       <div className="rounded-2xl border border-[#e8e0d4]/[0.12] bg-[#e8e0d4]/[0.04] p-5 text-left w-full">
                         <div className="flex items-center gap-2.5 mb-3">
                           <div className="w-8 h-8 rounded-lg bg-[#e8e0d4]/[0.08] flex items-center justify-center">
@@ -1417,7 +1419,9 @@ export default function RitualDashboard({
                       <h4 className="text-sm font-normal text-white/60">Показатели</h4>
                     </div>
 
-                    {healthSource === 'none' && (
+                    {dashboardHasRing && <RitualRingAnalytics />}
+
+                    {healthSource === 'none' && !dashboardHasRing && (
                       <div className="rounded-2xl border border-[#e8e0d4]/[0.12] bg-[#e8e0d4]/[0.04] p-5 flex flex-col gap-3 mb-2">
                         <div className="flex items-center gap-2.5">
                           <Lock className="w-5 h-5 text-[#e8e0d4]/50" />
@@ -2650,7 +2654,11 @@ export default function RitualDashboard({
               </div>
 
               <p className="text-[12px] text-white/60 leading-relaxed">
-                {lockedMetric.status === 'permission_denied'
+                {dashboardHasRing
+                  ? lockedMetric.status === 'unsupported'
+                    ? 'Ritual Ring подключено, но эта модель или версия прошивки не передаёт выбранный показатель.'
+                    : 'Ritual Ring подключено. За последние 7 дней этот показатель не передавался. Запустите синхронизацию и проверьте посадку кольца.'
+                  : lockedMetric.status === 'permission_denied'
                   ? 'Разрешите чтение этого показателя в Apple Health или Google Health Connect, затем обновите синхронизацию.'
                   : lockedMetric.status === 'no_recent_data'
                     ? 'Интеграция подключена, но за последние 7 дней этот показатель не передавался.'
@@ -2659,6 +2667,18 @@ export default function RitualDashboard({
                       : 'Этот показатель пока недоступен из подключенных источников.'}
               </p>
 
+              {dashboardHasRing ? (
+                <button
+                  onClick={async () => {
+                    setLockedMetric(null);
+                    await refreshDashboardHealth();
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 py-3 rounded-2xl bg-emerald-300/[0.10] border border-emerald-300/[0.18] text-[11px] font-medium text-emerald-100/80"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Синхронизировать Ritual Ring
+                </button>
+              ) : (
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => {
@@ -2678,6 +2698,7 @@ export default function RitualDashboard({
                   Купить кольцо
                 </button>
               </div>
+              )}
             </motion.div>
           </motion.div>
         )}

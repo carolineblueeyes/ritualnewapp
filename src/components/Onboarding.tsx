@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Brain, Mic, Compass, Award, ArrowRight, Apple, Chrome, User, Smartphone, Activity, ShoppingBag, Mail, Loader2, Shield } from 'lucide-react';
+import { Sparkles, Brain, Mic, Compass, Award, ArrowRight, Apple, Chrome, User, Smartphone, Activity, ShoppingBag, Mail, Loader2, Shield, Bluetooth } from 'lucide-react';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
+import { clearHealthCache } from '../services/health/manager';
 import ConnectHealthModal from './ConnectHealthModal';
+import RingConnectionWizard from './RingConnectionWizard';
 import {
   getCurrentAuthSession,
   signInWithEmail,
@@ -28,6 +30,7 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
   const [isHealthSyncing, setIsHealthSyncing] = useState(false);
   const [healthSyncProgress, setHealthSyncProgress] = useState(0);
   const [healthSyncStep, setHealthSyncStep] = useState('');
+  const [showRingWizard, setShowRingWizard] = useState(false);
   const [showHealthInfoModal, setShowHealthInfoModal] = useState(false);
 
   const healthPlatform = healthService.getPlatform();
@@ -415,16 +418,26 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
               <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/10 flex items-center justify-center">
                 <Activity className="w-8 h-8 text-amber-300" />
               </div>
-              <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">источник данных</span>
+              <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">выберите источник данных</span>
               <h2 className="text-2xl md:text-3xl font-normal font-display tracking-tight text-white leading-snug">
-                Подключите здоровье<br />
-                <span className="text-amber-200">для расчёта Сияния</span>
+                Подключите Ritual Ring<br />
+                <span className="text-amber-200">или приложение здоровья</span>
               </h2>
               <p className="text-xs text-white/40 max-w-[280px]">
-                Ritual использует только дневные показатели здоровья, чтобы точнее рассчитать Индекс Сияния и подобрать практики под ваше состояние.
+                Ritual Ring работает самостоятельно и передаёт все доступные показатели напрямую. Health Connect — дополнительный источник, подключать его необязательно.
               </p>
 
               <div className="flex flex-col gap-3 w-full max-w-[300px] mt-4">
+                {healthService.getPlatform() === 'android' && (
+                  <button
+                    onClick={() => setShowRingWizard(true)}
+                    disabled={isHealthSyncing}
+                    className="w-full h-14 rounded-2xl bg-emerald-200 text-[#07100d] hover:bg-emerald-100 disabled:opacity-60 font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3 shadow-lg shadow-emerald-300/10"
+                  >
+                    <Bluetooth className="w-5 h-5" />
+                    <span>Подключить Ritual Ring</span>
+                  </button>
+                )}
                 <button
                   onClick={() => connectSource(healthSourceType)}
                   disabled={isHealthSyncing}
@@ -435,6 +448,11 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                     : <Smartphone className="w-5 h-5" />}
                   <span>{isHealthSyncing ? 'Подключение...' : healthConnectLabel}</span>
                 </button>
+                {healthPlatform === 'android' && (
+                  <p className="-mt-1 text-[10px] text-white/35">
+                    Необязательно, если вы используете Ritual Ring
+                  </p>
+                )}
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-left">
                   <p className="text-[10px] font-mono uppercase tracking-widest text-white/35">{healthSourceLabel}</p>
                   <p className="mt-1 text-[11px] leading-relaxed text-white/45">
@@ -517,6 +535,17 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
       </AnimatePresence>
 
       <ConnectHealthModal isOpen={showHealthInfoModal} onClose={() => setShowHealthInfoModal(false)} />
+      <RingConnectionWizard
+        isOpen={showRingWizard}
+        onClose={() => setShowRingWizard(false)}
+        onConnected={() => {
+          setStep(5);
+          clearHealthCache();
+          void Promise.resolve(onRefreshHealth?.()).catch(error => {
+            console.warn('[Onboarding] Ritual Ring refresh failed:', error);
+          });
+        }}
+      />
     </div>
   );
 }

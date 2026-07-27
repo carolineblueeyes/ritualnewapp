@@ -2,6 +2,8 @@ export type { HealthMetrics, HealthSource, HealthDataType } from './types';
 export { EMPTY_METRICS, METRIC_META } from './types';
 export { healthService } from './health.service';
 export { bleRingService } from './ring';
+export { X6Ring } from './x6RingPlugin';
+export type { RingCandidate, RingConnectionState, RingDailySummary, RingDeviceInfo, RingPoint, RingDataType } from './x6RingPlugin';
 export { fetchHealthData, getCachedHealthData, clearHealthCache } from './manager';
 export type { CombinedHealthState, DataSource } from './manager';
 export { connectHealthSource } from './connectFlow';

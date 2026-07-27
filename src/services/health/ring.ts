@@ -1,131 +1,175 @@
-import { BluetoothSerial } from '@e-is/capacitor-bluetooth-serial';
-import { HealthMetrics, EMPTY_METRICS } from './types';
+import { Capacitor } from '@capacitor/core';
+import { EMPTY_METRICS, type HealthMetrics } from './types';
+import { X6Ring, type RingCandidate, type RingDailySummary, type RingDeviceInfo, type RingPoint, type RingDataType } from './x6RingPlugin';
 
-interface RingConfig {
-  namePrefix: string;
-  serviceUUID: string;
-  hrvCharacteristic: string;
-  pulseCharacteristic: string;
-  spo2Characteristic: string;
-  temperatureCharacteristic: string;
+const ADDRESS_KEY = 'ritual_ring_address';
+const CONNECTED_KEY = 'ritual_ble_ring_connected';
+const NAME_KEY = 'ritual_connected_ring_name';
+let connected = false;
+let deviceInfo: RingDeviceInfo | null = null;
+
+function ritualRingName(name?: string | null): string {
+  if (!name || /x6|2301/i.test(name)) return 'Ritual Ring';
+  return name;
 }
 
-const DEFAULT_RING_CONFIGS: RingConfig[] = [
-  {
-    namePrefix: 'Ritual',
-    serviceUUID: '0000180d-0000-1000-8000-00805f9b34fb',
-    hrvCharacteristic: '00002a37-0000-1000-8000-00805f9b34fb',
-    pulseCharacteristic: '00002a38-0000-1000-8000-00805f9b34fb',
-    spo2Characteristic: '00002a5e-0000-1000-8000-00805f9b34fb',
-    temperatureCharacteristic: '00002a1c-0000-1000-8000-00805f9b34fb',
-  },
-];
+function brandedInfo(info: RingDeviceInfo): RingDeviceInfo {
+  return { ...info, name: ritualRingName(info.name) };
+}
 
-let currentDevice: string | null = null;
+function today(): string {
+  const date = new Date();
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function remember(info: RingDeviceInfo) {
+  info = brandedInfo(info);
+  connected = info.state === 'connected';
+  deviceInfo = info;
+  if (info.address) localStorage.setItem(ADDRESS_KEY, info.address);
+  localStorage.setItem(CONNECTED_KEY, connected ? 'true' : 'false');
+  localStorage.setItem(NAME_KEY, info.name || 'Ritual Ring');
+}
 
 export const bleRingService = {
   isAvailable(): boolean {
-    const cap = (window as any).Capacitor;
-    return cap?.isNativePlatform?.() ?? false;
+    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
   },
 
   isConnected(): boolean {
-    return currentDevice !== null;
+    return connected || localStorage.getItem(CONNECTED_KEY) === 'true';
   },
 
   getDeviceName(): string | null {
-    return currentDevice;
+    return deviceInfo?.name || localStorage.getItem(NAME_KEY);
   },
 
-  async scan(): Promise<{ name: string; address: string; rssi: number }[]> {
-    try {
-      const enabled = await BluetoothSerial.isEnabled();
-      if (!enabled.enabled) {
-        await BluetoothSerial.enable();
-      }
-      const result = await BluetoothSerial.scan();
-      return result.devices.map(d => ({
-        name: d.name || 'Unknown Ring',
-        address: d.address,
-        rssi: d.rssi,
-      }));
-    } catch (err) {
-      console.warn('[BleRing] Scan failed:', err);
-      return [];
-    }
+  async getPermissionState() {
+    return X6Ring.getPermissionState();
   },
 
-  async connect(address: string): Promise<boolean> {
+  async requestPermissions() {
+    return X6Ring.requestPermissions();
+  },
+
+  async scan(): Promise<RingCandidate[]> {
+    if (!this.isAvailable()) return [];
+    const permission = await X6Ring.getPermissionState();
+    if (permission.bluetooth !== 'granted') await X6Ring.requestPermissions();
+    const result = await X6Ring.scan({ timeoutMs: 10_000 });
+    return result.devices
+      .map(device => ({ ...device, name: device.recognized ? 'Ritual Ring' : ritualRingName(device.name) }))
+      .sort((a, b) => Number(b.recognized) - Number(a.recognized) || b.rssi - a.rssi);
+  },
+
+  async connect(address: string, name = 'Ritual Ring'): Promise<boolean> {
+    if (!this.isAvailable()) return false;
     try {
-      await BluetoothSerial.connect({ address });
-      currentDevice = address;
-      localStorage.setItem('ritual_ring_address', address);
+      const info = brandedInfo(await X6Ring.connect({ address, name }));
+      remember(info);
+      await X6Ring.configureAutoMonitoring({ enabled: true, intervalMinutes: 30, startHour: 0, endHour: 23, weekMask: 127 });
+      await X6Ring.sync();
+      deviceInfo = brandedInfo(await X6Ring.getDeviceInfo());
+      remember(deviceInfo);
       return true;
-    } catch (err) {
-      console.warn('[BleRing] Connect failed:', err);
+    } catch (error) {
+      console.warn('[X6Ring] Connect failed:', error);
+      connected = false;
+      localStorage.setItem(CONNECTED_KEY, 'false');
       return false;
     }
   },
 
   async disconnect(): Promise<void> {
-    const saved = localStorage.getItem('ritual_ring_address');
-    if (saved) {
-      try {
-        await BluetoothSerial.disconnect({ address: saved });
-      } catch {}
-    }
-    currentDevice = null;
-    localStorage.removeItem('ritual_ring_address');
+    if (this.isAvailable()) await X6Ring.disconnect();
+    connected = false;
+    localStorage.setItem(CONNECTED_KEY, 'false');
+  },
+
+  async forget(): Promise<void> {
+    if (this.isAvailable()) await X6Ring.forgetDevice();
+    connected = false;
+    deviceInfo = null;
+    localStorage.removeItem(ADDRESS_KEY);
+    localStorage.removeItem(CONNECTED_KEY);
+    localStorage.removeItem(NAME_KEY);
   },
 
   async reconnectIfRemembered(): Promise<boolean> {
-    const saved = localStorage.getItem('ritual_ring_address');
-    if (!saved) return false;
+    if (!this.isAvailable() || !localStorage.getItem(ADDRESS_KEY)) return false;
     try {
-      const check = await BluetoothSerial.isConnected({ address: saved });
-      if (check.connected) {
-        currentDevice = saved;
-        return true;
+      const state = await X6Ring.getConnectionState();
+      connected = state.state === 'connected';
+      if (connected) {
+        deviceInfo = brandedInfo(await X6Ring.getDeviceInfo());
+        remember(deviceInfo);
       }
-    } catch {}
-    return false;
+      return connected;
+    } catch {
+      return false;
+    }
+  },
+
+  async sync(): Promise<void> {
+    if (!this.isAvailable() || !this.isConnected()) return;
+    await X6Ring.sync();
+    deviceInfo = brandedInfo(await X6Ring.getDeviceInfo());
+    remember(deviceInfo);
+  },
+
+  async getDeviceInfo(): Promise<RingDeviceInfo | null> {
+    if (!this.isAvailable()) return null;
+    try {
+      deviceInfo = brandedInfo(await X6Ring.getDeviceInfo());
+      return deviceInfo;
+    } catch {
+      return deviceInfo;
+    }
+  },
+
+  async getDailySummary(date = today()): Promise<RingDailySummary | null> {
+    if (!this.isAvailable()) return null;
+    try { return await X6Ring.getDailySummary({ date }); } catch { return null; }
+  },
+
+  async getSeries(type: RingDataType, days = 7, aggregation: 'raw' | 'hour' | 'day' = 'raw'): Promise<RingPoint[]> {
+    if (!this.isAvailable()) return [];
+    const to = Date.now();
+    return (await X6Ring.getSeries({ type, from: to - days * 86_400_000, to, aggregation })).points;
+  },
+
+  startLiveMeasurement(type: 'heartRate' | 'hrv' | 'spo2') {
+    return X6Ring.startLiveMeasurement({ type });
+  },
+
+  stopLiveMeasurement() {
+    return X6Ring.stopLiveMeasurement();
   },
 
   async getMetrics(): Promise<HealthMetrics> {
-    if (!currentDevice) {
-      return { ...EMPTY_METRICS, source: 'ring' };
-    }
-
+    if (!this.isConnected()) return { ...EMPTY_METRICS, source: 'ring' };
     try {
-      const readVal = async (charUUID: string): Promise<string | null> => {
-        try {
-          const result = await BluetoothSerial.read({ address: currentDevice! });
-          return result.value;
-        } catch {
-          return null;
-        }
-      };
-
-      const [hrvRaw, pulseRaw, spo2Raw, tempRaw] = await Promise.all([
-        readVal(DEFAULT_RING_CONFIGS[0].hrvCharacteristic),
-        readVal(DEFAULT_RING_CONFIGS[0].pulseCharacteristic),
-        readVal(DEFAULT_RING_CONFIGS[0].spo2Characteristic),
-        readVal(DEFAULT_RING_CONFIGS[0].temperatureCharacteristic),
-      ]);
-
+      await this.sync();
+      const summary = await X6Ring.getDailySummary({ date: today() });
       return {
-        hrv: hrvRaw ? parseInt(hrvRaw, 10) || null : null,
-        sleepHours: null,
-        steps: null,
-        restingHR: pulseRaw ? parseInt(pulseRaw, 10) || null : null,
-        spo2: spo2Raw ? parseInt(spo2Raw, 10) || null : null,
-        temperature: tempRaw ? parseFloat(tempRaw) || null : null,
+        hrv: summary.hrv,
+        sleepHours: summary.sleepHours,
+        steps: summary.steps,
+        restingHR: summary.restingHR,
+        spo2: summary.spo2,
+        temperature: summary.temperature,
         respiratoryRate: null,
+        distance: summary.distance,
+        calories: summary.calories,
+        activeMinutes: summary.activeMinutes,
+        batteryLevel: summary.batteryLevel,
+        dataFreshness: summary.lastSync,
         source: 'ring',
-        lastSync: new Date().toISOString(),
+        lastSync: summary.lastSync,
       };
-    } catch (err) {
-      console.warn('[BleRing] Read metrics failed:', err);
+    } catch (error) {
+      console.warn('[X6Ring] Sync failed:', error);
       return { ...EMPTY_METRICS, source: 'ring' };
     }
   },
