@@ -23,6 +23,28 @@ function today(): string {
   return local.toISOString().slice(0, 10);
 }
 
+function dateDaysAgo(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export function selectRecentSleepHours(todaySummary: RingDailySummary, previousSummary: RingDailySummary | null): number | null {
+  if (todaySummary.sleepHours !== null && todaySummary.sleepHours > 0) return todaySummary.sleepHours;
+  if (!previousSummary || previousSummary.sleepHours === null || previousSummary.sleepHours <= 0) return null;
+  if (!previousSummary.sleepEnd) return previousSummary.sleepHours;
+  const endedAt = new Date(previousSummary.sleepEnd).getTime();
+  const age = Date.now() - endedAt;
+  return Number.isFinite(endedAt) && age >= -6 * 3_600_000 && age <= 30 * 3_600_000
+    ? previousSummary.sleepHours
+    : null;
+}
+
 function remember(info: RingDeviceInfo) {
   info = brandedInfo(info);
   connected = info.state === 'connected';
@@ -38,7 +60,7 @@ export const bleRingService = {
   },
 
   isConnected(): boolean {
-    return connected || localStorage.getItem(CONNECTED_KEY) === 'true';
+    return connected;
   },
 
   getDeviceName(): string | null {
@@ -97,16 +119,31 @@ export const bleRingService = {
   },
 
   async reconnectIfRemembered(): Promise<boolean> {
-    if (!this.isAvailable() || !localStorage.getItem(ADDRESS_KEY)) return false;
+    const address = localStorage.getItem(ADDRESS_KEY);
+    if (!this.isAvailable() || !address) return false;
     try {
-      const state = await X6Ring.getConnectionState();
-      connected = state.state === 'connected';
+      let state = await X6Ring.getConnectionState();
+      for (let attempt = 0; state.state === 'connecting' && attempt < 20; attempt += 1) {
+        await wait(400);
+        state = await X6Ring.getConnectionState();
+      }
+      if (state.state !== 'connected') {
+        const info = brandedInfo(await X6Ring.connect({
+          address,
+          name: localStorage.getItem(NAME_KEY) || 'Ritual Ring',
+        }));
+        remember(info);
+        return info.state === 'connected';
+      }
+      connected = true;
       if (connected) {
         deviceInfo = brandedInfo(await X6Ring.getDeviceInfo());
         remember(deviceInfo);
       }
       return connected;
     } catch {
+      connected = false;
+      localStorage.setItem(CONNECTED_KEY, 'false');
       return false;
     }
   },
@@ -151,10 +188,13 @@ export const bleRingService = {
     if (!this.isConnected()) return { ...EMPTY_METRICS, source: 'ring' };
     try {
       await this.sync();
-      const summary = await X6Ring.getDailySummary({ date: today() });
+      const [summary, previousSummary] = await Promise.all([
+        X6Ring.getDailySummary({ date: today() }),
+        X6Ring.getDailySummary({ date: dateDaysAgo(1) }).catch(() => null),
+      ]);
       return {
         hrv: summary.hrv,
-        sleepHours: summary.sleepHours,
+        sleepHours: selectRecentSleepHours(summary, previousSummary),
         steps: summary.steps,
         restingHR: summary.restingHR,
         spo2: summary.spo2,

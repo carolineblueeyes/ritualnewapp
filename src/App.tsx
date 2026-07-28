@@ -15,6 +15,7 @@ import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { notificationService, rescheduleAll, scheduleSocialInvite, scheduleSubscriptionWarning } from './services/notifications';
 import { deriveRealStats, EMPTY_USER_STATS, parseStoredStats } from './services/progressStats';
+import RitualInsights from './components/RitualInsights';
 import {
   PRIVACY_SAFE_SYNC_EVENT,
   syncPrivacySafeState,
@@ -229,11 +230,12 @@ export default function App() {
   const [selectedTimelineSlotId, setSelectedTimelineSlotId] = useState<string | null>(null);
   const practiceCompletionHandledRef = useRef(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
   const [voiceReply, setVoiceReply] = useState('Привет! Как ты себя чувствуешь? Скажи мне, например: "я устал", "хочу спать" или "нужен фокус".');
   const [isListening, setIsListening] = useState(false);
 
-  const isAnyOverlayOpen = showSubscription || activeTool !== null || selectedPractice !== null || isVoiceOpen || !onboardingCompleted;
+  const isAnyOverlayOpen = showSubscription || showInsights || activeTool !== null || selectedPractice !== null || isVoiceOpen || !onboardingCompleted;
 
   const syncPrivacySafeStateForCurrentUser = useCallback(async () => {
     if (!onboardingCompleted) return;
@@ -242,9 +244,10 @@ export default function App() {
       stats: deriveRealStats(stats),
       shine,
       healthSource,
+      healthMetrics,
       onboardingCompleted,
     });
-  }, [healthSource, onboardingCompleted, shine, stats]);
+  }, [healthMetrics, healthSource, onboardingCompleted, shine, stats]);
 
   const syncNotificationSchedule = useCallback(async (includeSocialInvite = false) => {
     if (!onboardingCompleted || !notificationService.isNotificationsEnabled()) return;
@@ -400,6 +403,8 @@ export default function App() {
     const handler = CapApp.addListener('backButton', ({ canGoBack }) => {
       if (showSubscription) {
         setShowSubscription(false);
+      } else if (showInsights) {
+        setShowInsights(false);
       } else if (activeTool !== null) {
         setActiveTool(null);
       } else if (selectedPractice !== null) {
@@ -415,7 +420,7 @@ export default function App() {
       }
     });
     return () => { handler.then(h => h.remove()); };
-  }, [showSubscription, activeTool, selectedPractice, isVoiceOpen, activeTab]);
+  }, [showSubscription, showInsights, activeTool, selectedPractice, isVoiceOpen, activeTab]);
 
   useEffect(() => {
     localStorage.setItem('ritual_practices', JSON.stringify(practices));
@@ -601,12 +606,14 @@ export default function App() {
           {/* Top header */}
           <header className="relative z-10 w-full max-w-md mx-auto pt-[calc(env(safe-area-inset-top)+1.5rem)] px-6 flex justify-between items-center">
             <button 
+              aria-label="Открыть профиль"
               onClick={() => switchTab('profile')}
               className="w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.1] transition-colors"
             >
               <User className="w-4 h-4 text-white/40" strokeWidth={2} />
             </button>
             <button 
+              aria-label="Открыть подписку"
               onClick={() => setShowSubscription(true)}
               className={`text-[11px] font-medium tracking-wide transition-colors ${
                 isSubscribed ? 'text-white/60 hover:text-white/80' : 'text-amber-400 hover:text-amber-300'
@@ -653,6 +660,7 @@ export default function App() {
                     practices={practices}
                     onSelectPractice={handleSelectPractice}
                     onSelectTool={(toolId) => setActiveTool(toolId)}
+                    onOpenInsights={() => setShowInsights(true)}
                   />
                 </motion.div>
               )}
@@ -744,6 +752,9 @@ export default function App() {
           </div>
         </>
       )}
+
+      {/* Practice player overlay */}
+      {showInsights && <RitualInsights onClose={() => setShowInsights(false)} />}
 
       {/* Practice player overlay */}
       {selectedPractice && (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Pause, Play, HelpCircle, Volume2, VolumeX, Share2, Check } from 'lucide-react';
+import { X, Pause, Play, HelpCircle, Volume2, VolumeX, Share2, Check, Heart } from 'lucide-react';
 import { Practice } from '../types';
 import { StandalonePractice, PracticeStep, CrystalState } from '../data/practices/types';
 import { STANDALONE_GROUP_COLORS } from '../data/practices';
@@ -635,21 +635,39 @@ export default function PracticePlayer({
   // For standalone or daily practices with steps
   const isDailyPractice = ['start-day', 'calm-down', 'pause', 'focus', 'restore', 'end-day', 'important-moment'].includes(practice.id);
   const dailySteps = isDailyPractice ? getDailySteps(practice.id) : null;
-  const steps = standalone ? standalone.steps : (dailySteps || []);
-  const hasSteps = steps.length > 0;
+  const baseSteps = standalone ? standalone.steps : (dailySteps || []);
+  const hasSteps = baseSteps.length > 0;
 
-  const totalDuration = hasSteps
-    ? (steps[steps.length - 1].startTime + (steps[steps.length - 1].duration || 0))
+  const calculatedFullDuration = hasSteps
+    ? (baseSteps[baseSteps.length - 1].startTime + (baseSteps[baseSteps.length - 1].duration || 0))
     : (practice.durationSec || 60);
+  const fullDuration = standalone?.duration || calculatedFullDuration;
+  const hasShortVersion = Boolean(standalone?.shortSteps?.length && standalone.shortDuration);
 
   // Timer state
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [sessionMode, setSessionMode] = useState<'full' | 'short'>('full');
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ritual_favorite_practices_list') || '[]').includes(standalone?.id || practice.id); } catch { return false; }
+  });
+  const selectedSteps = sessionMode === 'short' && hasShortVersion ? standalone!.shortSteps! : baseSteps;
+  const totalDuration = sessionMode === 'short' && hasShortVersion ? standalone!.shortDuration! : fullDuration;
+  const selectedStepsDuration = selectedSteps.length
+    ? selectedSteps[selectedSteps.length - 1].startTime + (selectedSteps[selectedSteps.length - 1].duration || 0)
+    : totalDuration;
+  const timelineScale = selectedStepsDuration > 0 ? totalDuration / selectedStepsDuration : 1;
+  const steps = selectedSteps.map(step => ({
+    ...step,
+    startTime: Math.round(step.startTime * timelineScale),
+    duration: step.duration ? Math.max(1, Math.round(step.duration * timelineScale)) : step.duration,
+  }));
 
   // Breathing state
   const [phase, setPhase] = useState<BreathPhase>('inhale');
@@ -675,7 +693,7 @@ export default function PracticePlayer({
   useEffect(() => {
     import('../services/health/manager').then(({ fetchHealthData }) => {
       fetchHealthData().then((result: any) => {
-        const hr = result?.metrics?.heartRate;
+        const hr = result?.metrics?.heartRate ?? result?.metrics?.restingHR;
         if (hr && hr > 0) setBeforeHeartRate(Math.round(hr));
       }).catch(() => {});
     }).catch(() => {});
@@ -810,7 +828,7 @@ export default function PracticePlayer({
     // Capture after heart rate
     import('../services/health/manager').then(({ fetchHealthData }) => {
       fetchHealthData().then((result: any) => {
-        const hr = result?.metrics?.heartRate;
+        const hr = result?.metrics?.heartRate ?? result?.metrics?.restingHR;
         if (hr && hr > 0) setAfterHeartRate(Math.round(hr));
       }).catch(() => {});
     }).catch(() => {});
@@ -883,6 +901,24 @@ export default function PracticePlayer({
     }
   };
 
+  const toggleFavorite = () => {
+    const id = standalone?.id || practice.id;
+    let values: string[] = [];
+    try { values = JSON.parse(localStorage.getItem('ritual_favorite_practices_list') || '[]'); } catch {}
+    values = values.includes(id) ? values.filter(value => value !== id) : [...values, id];
+    localStorage.setItem('ritual_favorite_practices_list', JSON.stringify(values));
+    setIsFavorite(values.includes(id));
+  };
+
+  if (!hasStarted) {
+    return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 bg-[#050508] text-white flex flex-col px-6 pt-[calc(env(safe-area-inset-top)+1.25rem)] pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
+      <header className="flex items-center justify-between"><button aria-label="Закрыть практику" onClick={onClose} className="w-10 h-10 rounded-full border border-white/[0.07] bg-white/[0.03] flex items-center justify-center"><X className="w-4 h-4 text-white/55" /></button><div className="flex gap-2"><button onClick={toggleFavorite} aria-label="Избранное" className="w-10 h-10 rounded-full border border-white/[0.07] bg-white/[0.03] flex items-center justify-center"><Heart className={`w-4 h-4 ${isFavorite ? 'text-rose-300 fill-rose-300' : 'text-white/45'}`} /></button><button onClick={() => setShowHelp(true)} aria-label="О практике" className="w-10 h-10 rounded-full border border-white/[0.07] bg-white/[0.03] flex items-center justify-center"><HelpCircle className="w-4 h-4 text-white/45" /></button></div></header>
+      <main className="flex-1 flex flex-col justify-center max-w-md mx-auto w-full"><span className="text-[10px] uppercase tracking-[0.24em] text-white/35">{standalone?.subtitle || practice.mood}</span><h1 className="text-3xl font-light leading-tight mt-3">{standalone?.title || practice.title}</h1><section className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 mt-8"><p className="text-[10px] uppercase tracking-wider text-white/35">Что изменится</p><p className="text-sm text-white/65 mt-2 leading-relaxed">{standalone?.description || practice.description}</p>{standalone?.scientificBasis && <><p className="text-[10px] uppercase tracking-wider text-white/35 mt-5">Как это работает</p><p className="text-xs text-white/45 mt-2 leading-relaxed">{standalone.scientificBasis}</p></>}</section></main>
+      <footer className="max-w-md mx-auto w-full">{hasShortVersion && <div className="grid grid-cols-2 rounded-full bg-white/[0.04] p-1 mb-3">{(['full','short'] as const).map(mode => <button key={mode} onClick={() => setSessionMode(mode)} className={`h-10 rounded-full text-xs ${sessionMode === mode ? 'bg-white/10 text-white' : 'text-white/35'}`}>{mode === 'full' ? `Полная · ${formatTime(fullDuration)}` : `Короткая · ${formatTime(standalone!.shortDuration!)}`}</button>)}</div>}<button onClick={() => { setHasStarted(true); setIsPlaying(true); }} className="w-full h-14 rounded-2xl bg-white text-black font-semibold flex items-center justify-center gap-2"><Play className="w-4 h-4 fill-current" />Начать</button></footer>
+      <AnimatePresence>{showHelp && <div className="fixed inset-0 z-[60] bg-black/75 p-6 flex items-center justify-center" onClick={() => setShowHelp(false)}><div className="rounded-3xl border border-white/10 bg-[#121216] p-6 max-w-sm"><p className="text-sm text-white/65 leading-relaxed">Начни в удобном положении. Остановись, если появятся боль, выраженный дискомфорт или головокружение.</p></div></div>}</AnimatePresence>
+    </motion.div>;
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -936,6 +972,7 @@ export default function PracticePlayer({
       {!isComplete && (
         <div className="relative z-10 flex items-center justify-between px-6 pt-6 pb-2">
           <button
+            aria-label="Помощь по практике"
             onClick={() => setShowHelp(true)}
             className="w-10 h-10 rounded-full bg-white/[0.03] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.08] active:scale-95 transition-all shadow-lg"
           >
@@ -953,6 +990,7 @@ export default function PracticePlayer({
 
           <div className="flex gap-2">
             <button
+              aria-label={isMuted ? 'Включить звук' : 'Выключить звук'}
               onClick={() => setIsMuted(!isMuted)}
               className="w-10 h-10 rounded-full bg-white/[0.03] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.08] active:scale-95 transition-all shadow-lg"
             >

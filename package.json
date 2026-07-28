@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
     "cap:build": "npm run patch:local-notifications && vite build && npx cap sync",
     "cap:ios": "npm run patch:local-notifications && vite build && npx cap sync ios && npx cap open ios",
     "cap:android": "npm run patch:local-notifications && vite build && npx cap sync android && npx cap open android",

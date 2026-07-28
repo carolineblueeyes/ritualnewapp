@@ -4,6 +4,7 @@ import { Flame, Calendar, Compass, Lock, CheckCircle, HelpCircle } from 'lucide-
 import { UserStats, Practice } from '../types';
 import PracticeEngine from './PracticeEngine';
 import { chaptersData, ChapterId, getPracticeScript } from '../data/practices';
+import ProgressJournal from './ProgressJournal';
 import { deriveRealStats } from '../services/progressStats';
 
 interface StatsPanelProps {
@@ -267,6 +268,8 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
           </div>
         </div>
       </div>
+
+      <ProgressJournal stats={realStats} />
 
       {/* ПУТЬ ВНИМАНИЯ (Главы) */}
       <div className="flex flex-col gap-2">

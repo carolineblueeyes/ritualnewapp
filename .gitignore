@@ -7,6 +7,8 @@ dist/
 android/app/google-services.json
 .data/
 *.log
+supabase/.temp/
+README.zip
 
 # Android build artifacts (но не исходники)
 android/app/build/

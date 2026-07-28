@@ -24,6 +24,8 @@ export interface HealthMetrics {
   spo2: number | null;
   temperature: number | null;
   respiratoryRate: number | null;
+  deepSleepPercent?: number | null;
+  sleepInterruptions?: number | null;
   distance?: number | null;
   calories?: number | null;
   activeMinutes?: number | null;
@@ -31,6 +33,17 @@ export interface HealthMetrics {
   dataFreshness?: string | null;
   source: HealthSource;
   lastSync: string | null;
+}
+
+export type UserGender = 'male' | 'female' | 'unspecified';
+export type CyclePhase = 'menstrual' | 'follicular' | 'ovulatory' | 'luteal' | null;
+
+export interface HealthProfileContext {
+  age?: number | null;
+  gender?: UserGender;
+  cycleDay?: number | null;
+  cyclePhase?: CyclePhase;
+  pregnancyMode?: boolean;
 }
 
 export interface DailyHealthPoint {

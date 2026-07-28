@@ -76,7 +76,11 @@ export function useHealthData(): UseHealthDataReturn {
   }, []);
 
   useEffect(() => {
-    bleRingService.reconnectIfRemembered().finally(load);
+    bleRingService.reconnectIfRemembered()
+      .then(isConnected => {
+        if (isConnected) clearHealthCache();
+      })
+      .finally(load);
   }, [load]);
 
   useEffect(() => {
@@ -133,8 +137,17 @@ export function useHealthData(): UseHealthDataReturn {
   }, []);
 
   const shine = useMemo(() => {
-    return calculateShine(state, getPracticesCompleted());
-  }, [state]);
+    void getPracticesCompleted();
+    const age = Number(localStorage.getItem('ritual_user_age'));
+    return calculateShine(state, {
+      historyByMetric,
+      age: Number.isFinite(age) && age >= 18 ? age : null,
+      gender: (localStorage.getItem('ritual_user_gender') as 'male' | 'female' | 'unspecified') || 'unspecified',
+      cycleDay: Number(localStorage.getItem('ritual_cycle_day')) || null,
+      cyclePhase: (localStorage.getItem('ritual_cycle_phase') as 'menstrual' | 'follicular' | 'ovulatory' | 'luteal' | null),
+      pregnancyMode: localStorage.getItem('ritual_pregnancy_mode') === 'true',
+    });
+  }, [state, historyByMetric]);
 
   return {
     metrics: state,

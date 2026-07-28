@@ -32,6 +32,8 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
   const [healthSyncStep, setHealthSyncStep] = useState('');
   const [showRingWizard, setShowRingWizard] = useState(false);
   const [showHealthInfoModal, setShowHealthInfoModal] = useState(false);
+  const [age, setAge] = useState('');
+  const [privacyConsent, setPrivacyConsent] = useState(false);
 
   const healthPlatform = healthService.getPlatform();
   const healthSourceType: HealthConnectSourceType = healthPlatform === 'ios' ? 'healthkit' : 'healthconnect';
@@ -152,7 +154,14 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
 
   const saveGender = (gender: 'male' | 'female' | 'unspecified') => {
     localStorage.setItem('ritual_user_gender', gender);
+    localStorage.setItem('ritual_user_age', age);
     setStep(3);
+  };
+
+  const completeOnboarding = () => {
+    if (!privacyConsent) return;
+    localStorage.setItem('ritual_privacy_consent_version', '2026-07-28');
+    onComplete();
   };
 
   return (
@@ -321,21 +330,26 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                 Это помогает корректнее считать Индекс Сияния и фильтровать показатели здоровья в аналитике.
               </p>
 
+              <label className="w-full max-w-[280px] text-left"><span className="text-[10px] uppercase tracking-wider text-white/40">Возраст</span><input value={age} onChange={event => setAge(event.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="Например, 35" className="mt-2 w-full h-12 rounded-2xl bg-white/5 border border-white/10 px-4 text-sm text-white outline-none focus:border-amber-300/30" /><span className="text-[9px] text-white/30 mt-1 block">Нужен только для стартовой персональной нормы. Допустимый возраст: 18–100.</span></label>
+
               <div className="flex flex-col gap-3.5 w-full max-w-[280px] mt-4">
                 <button
                   onClick={() => saveGender('male')}
+                  disabled={Number(age) < 18 || Number(age) > 100}
                   className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98]"
                 >
                   Мужчина
                 </button>
                 <button
                   onClick={() => saveGender('female')}
+                  disabled={Number(age) < 18 || Number(age) > 100}
                   className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98]"
                 >
                   Женщина
                 </button>
                 <button
                   onClick={() => saveGender('unspecified')}
+                  disabled={Number(age) < 18 || Number(age) > 100}
                   className="w-full h-11 rounded-2xl border border-transparent text-white/50 hover:text-white/80 font-medium text-xs tracking-wider uppercase font-mono transition-all active:scale-[0.98]"
                 >
                   Не указывать
@@ -508,9 +522,11 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
             </div>
 
             <div className="pb-8">
+              <label className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4 mb-3 text-left"><input type="checkbox" checked={privacyConsent} onChange={event => setPrivacyConsent(event.target.checked)} className="mt-0.5 accent-amber-300" /><span className="text-[10px] text-white/50 leading-relaxed">Я разрешаю Ritual обрабатывать дневные агрегаты здоровья для расчёта Сияния и персональных рекомендаций. Сырые сенсорные измерения не отправляются в облако.</span></label>
               <button
-                onClick={onComplete}
-                className="w-full h-14 rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-black font-semibold hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/15"
+                onClick={completeOnboarding}
+                disabled={!privacyConsent}
+                className="w-full h-14 rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-black font-semibold hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/15 disabled:opacity-35"
               >
                 <span>Начать путь</span>
                 <ArrowRight className="w-5 h-5" />

@@ -80,8 +80,14 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
     private X6GattClient client;
     private PluginCall scanCall;
     private PluginCall connectCall;
+    private PluginCall syncCall;
     private final Map<String, JSObject> scanned = new LinkedHashMap<>();
     private String liveType;
+    private String syncFrom;
+    private long syncStartedAt;
+    private int sleepPacketCount;
+    private boolean sleepSyncActive;
+    private final Runnable sleepSyncTimeout = () -> finishSleepSyncPhase(false);
 
     @Override
     public void load() {
@@ -205,27 +211,50 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
     @PluginMethod
     public void sync(PluginCall call) {
         if (!client.isConnected()) { call.reject("Кольцо не подключено"); return; }
-        String from = call.getString("from", formatDeviceDate(System.currentTimeMillis() - 30L * 86400000L));
+        if (syncCall != null) { call.reject("Синхронизация уже выполняется"); return; }
+        syncCall = call;
+        syncFrom = call.getString("from", formatDeviceDate(System.currentTimeMillis() - 30L * 86400000L));
+        syncStartedAt = System.currentTimeMillis();
+        sleepPacketCount = 0;
+        sleepSyncActive = true;
         notifyListeners("syncProgress", new JSObject().put("progress", 5).put("step", "Подготовка"), true);
         client.enqueue(BleSDK.SetDeviceTime(new MyDeviceTime()));
         client.enqueue(BleSDK.GetDeviceBatteryLevel());
         client.enqueue(BleSDK.GetDeviceVersion());
         client.enqueue(BleSDK.GetDeviceName());
-        client.enqueue(BleSDK.GetTotalActivityDataWithMode((byte) 0, from));
-        client.enqueue(BleSDK.GetDetailActivityDataWithMode((byte) 0, from));
-        client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0, from));
-        client.enqueue(BleSDK.GetHRVDataWithMode((byte) 0, from));
-        client.enqueue(BleSDK.GetStaticHRWithMode((byte) 0, from));
-        client.enqueue(BleSDK.GetDynamicHRWithMode((byte) 0, from));
-        client.enqueue(BleSDK.Oxygen_data((byte) 0, from));
-        client.enqueue(BleSDK.GetTemperature_historyData((byte) 0, from));
-        long now = System.currentTimeMillis();
-        prefs.edit().putLong(KEY_LAST_SYNC, now).apply();
-        main.postDelayed(() -> {
-            JSObject result = new JSObject().put("lastSync", iso(now)).put("records", store.countSince(now - 7L * 86400000L));
-            notifyListeners("syncProgress", new JSObject().put("progress", 100).put("step", "Готово"), true);
-            call.resolve(result);
-        }, 9000);
+        // X6 returns sleep as a paged stream. Other history commands must not
+        // be interleaved until the ring sends dataEnd (or the timeout expires).
+        client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0, syncFrom));
+        main.removeCallbacks(sleepSyncTimeout);
+        main.postDelayed(sleepSyncTimeout, 15000);
+    }
+
+    private void finishSleepSyncPhase(boolean completedByDevice) {
+        if (!sleepSyncActive || syncCall == null) return;
+        sleepSyncActive = false;
+        main.removeCallbacks(sleepSyncTimeout);
+        notifyListeners("syncProgress", new JSObject().put("progress", completedByDevice ? 45 : 35)
+            .put("step", completedByDevice ? "Сон загружен" : "Сон: время ожидания истекло"), true);
+
+        client.enqueue(BleSDK.GetTotalActivityDataWithMode((byte) 0, syncFrom));
+        client.enqueue(BleSDK.GetDetailActivityDataWithMode((byte) 0, syncFrom));
+        client.enqueue(BleSDK.GetHRVDataWithMode((byte) 0, syncFrom));
+        client.enqueue(BleSDK.GetStaticHRWithMode((byte) 0, syncFrom));
+        client.enqueue(BleSDK.GetDynamicHRWithMode((byte) 0, syncFrom));
+        client.enqueue(BleSDK.Oxygen_data((byte) 0, syncFrom));
+        client.enqueue(BleSDK.GetTemperature_historyData((byte) 0, syncFrom));
+        main.postDelayed(this::completeSync, 9000);
+    }
+
+    private void completeSync() {
+        PluginCall pending = syncCall;
+        if (pending == null) return;
+        syncCall = null;
+        long completedAt = System.currentTimeMillis();
+        prefs.edit().putLong(KEY_LAST_SYNC, completedAt).apply();
+        JSObject result = new JSObject().put("lastSync", iso(completedAt)).put("records", store.countSince(syncStartedAt));
+        notifyListeners("syncProgress", new JSObject().put("progress", 100).put("step", "Готово"), true);
+        pending.resolve(result);
     }
 
     @PluginMethod
@@ -274,6 +303,16 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         if (BleConst.GetDeviceBatteryLevel.equals(type)) prefs.edit().putInt(KEY_BATTERY, intFrom(data, DeviceKey.BatteryLevel, -1)).apply();
         if (BleConst.GetDeviceVersion.equals(type)) prefs.edit().putString(KEY_VERSION, stringFrom(data, DeviceKey.DeviceVersion)).apply();
         if (BleConst.GetDeviceName.equals(type) || BleConst.CMD_Get_Name.equals(type)) prefs.edit().putString(KEY_NAME, stringFrom(data, DeviceKey.DeviceName)).apply();
+        if (BleConst.GetDetailSleepData.equals(type) && sleepSyncActive) {
+            sleepPacketCount++;
+            main.removeCallbacks(sleepSyncTimeout);
+            main.postDelayed(sleepSyncTimeout, 15000);
+            boolean finished = Boolean.parseBoolean(String.valueOf(maps.get(DeviceKey.End)));
+            if (finished) finishSleepSyncPhase(true);
+            else if (sleepPacketCount % 50 == 0) {
+                client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0x02, ""));
+            }
+        }
         if (BleConst.GetDeviceBatteryLevel.equals(type) || BleConst.GetDeviceVersion.equals(type) || BleConst.GetDeviceName.equals(type) || BleConst.CMD_Get_Name.equals(type)) {
             notifyListeners("deviceInfoChanged", deviceJson(), true);
         }
@@ -393,11 +432,13 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         void insert(String device, String type, long receivedAt, String payload) { ContentValues v = new ContentValues(); v.put("device", device); v.put("type", type); v.put("received_at", receivedAt); v.put("payload", payload); getWritableDatabase().insertWithOnConflict("ring_records", null, v, SQLiteDatabase.CONFLICT_IGNORE); }
         int countSince(long from) { try (Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM ring_records WHERE received_at>=?", new String[]{String.valueOf(from)})) { return c.moveToFirst() ? c.getInt(0) : 0; } }
         JSObject summary(String date, SharedPreferences prefs) {
-            Summary s = new Summary(date); String like = "%" + date.replace('-', '.') + "%";
+            Summary s = new Summary(date);
+            String dottedDate = "%" + date.replace('-', '.') + "%";
+            String dashedDate = "%" + date + "%";
             long dayStart;
             try { dayStart = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date).getTime(); } catch (Exception ignored) { dayStart = System.currentTimeMillis() - 86400000L; }
             long dayEnd = dayStart + 86400000L;
-            try (Cursor c = getReadableDatabase().rawQuery("SELECT payload,received_at FROM ring_records WHERE payload LIKE ? OR received_at BETWEEN ? AND ? ORDER BY received_at", new String[]{like, String.valueOf(dayStart), String.valueOf(dayEnd)})) {
+            try (Cursor c = getReadableDatabase().rawQuery("SELECT payload,received_at FROM ring_records WHERE payload LIKE ? OR payload LIKE ? OR received_at BETWEEN ? AND ? ORDER BY received_at", new String[]{dottedDate, dashedDate, String.valueOf(dayStart), String.valueOf(dayEnd)})) {
                 while (c.moveToNext()) s.accept(c.getString(0), c.getLong(1));
             }
             long last = prefs.getLong(KEY_LAST_SYNC, 0);
@@ -442,7 +483,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
                 else if(value instanceof JSONArray){JSONArray a=(JSONArray)value;for(int i=0;i<a.length();i++)walk(a.get(i));}
             }
             void add(JSONObject o,String key,int kind){ if(!o.has(key))return; try{double v=Double.parseDouble(String.valueOf(o.get(key))); if(v<=0)return; switch(kind){case 0:steps=Math.max(steps,(int)v);break;case 1:distance=Math.max(distance,v);break;case 2:calories=Math.max(calories,v);break;case 3:hrTotal+=v;hrCount++;hrMin=Math.min(hrMin,(int)v);hrMax=Math.max(hrMax,(int)v);break;case 4:hrvTotal+=v;hrvCount++;break;case 5:spo2Total+=v;spo2Count++;spo2Min=Math.min(spo2Min,(int)v);spo2Max=Math.max(spo2Max,(int)v);break;case 6:tempTotal+=v;tempCount++;tempMin=Math.min(tempMin,v);tempMax=Math.max(tempMax,v);break;}}catch(Exception ignored){} }
-            void parseSleep(JSONObject o) { try { int unit=Math.max(1,o.optInt("sleepUnitLength",5)); String raw=String.valueOf(o.get("arraySleepQuality")); long cursor=parseTime(o.optString("date", targetDate+" 00:00:00")); for(String part:raw.replace("[","").replace("]","").split(",")){ int code;try{code=Integer.parseInt(part.trim());}catch(Exception e){continue;} String stage=code==0?"awake":code==1?"light":code==2?"deep":code==3?"rem":"unknown"; int minutes=unit; if(code==0)awakeMinutes+=minutes;else{sleepMinutes+=minutes;if(code==1)lightMinutes+=minutes;else if(code==2)deepMinutes+=minutes;else if(code==3)remMinutes+=minutes;else unknownMinutes+=minutes;} long end=cursor+minutes*60000L; sleepStart=Math.min(sleepStart,cursor);sleepEnd=Math.max(sleepEnd,end);sleepIntervals.put(new JSObject().put("start",iso(cursor)).put("end",iso(end)).put("stage",stage));cursor=end;} } catch(Exception ignored){} }
+            void parseSleep(JSONObject o) { try { int unit=Math.max(1,o.optInt("sleepUnitLength",5)); String raw=String.valueOf(o.get("arraySleepQuality")); long cursor=parseTime(o.optString("date", targetDate+" 00:00:00")); String normalized=raw.replace("[","").replace("]","").trim(); if(normalized.isEmpty())return; for(String part:normalized.split("[,\\s]+")){ int code;try{code=Integer.parseInt(part.trim());}catch(Exception e){continue;} String stage=code==0?"awake":code==1?"light":code==2?"deep":code==3?"rem":"unknown"; int minutes=unit; if(code==0)awakeMinutes+=minutes;else{sleepMinutes+=minutes;if(code==1)lightMinutes+=minutes;else if(code==2)deepMinutes+=minutes;else if(code==3)remMinutes+=minutes;else unknownMinutes+=minutes;} long end=cursor+minutes*60000L; sleepStart=Math.min(sleepStart,cursor);sleepEnd=Math.max(sleepEnd,end);sleepIntervals.put(new JSObject().put("start",iso(cursor)).put("end",iso(end)).put("stage",stage));cursor=end;} } catch(Exception ignored){} }
             void parseWorkout(JSONObject o) { try { workouts.put(new JSObject().put("start",iso(parseTime(o.optString("date",targetDate+" 00:00:00")))).put("type",o.optString("sportModel","activity")).put("durationMinutes",o.optInt("activeMinutes",o.optInt("sportTime",0))).put("calories",o.has("calories")?o.optDouble("calories"):null).put("heartRate",o.has("heartRate")?o.optDouble("heartRate"):null)); } catch(Exception ignored){} }
             long parseTime(String value) { for(String pattern:new String[]{"yyyy.MM.dd HH:mm:ss","yyyy-MM-dd HH:mm:ss","yyyy.MM.dd HH:mm","yyyy-MM-dd HH:mm","yyyy-MM-dd"})try{return new SimpleDateFormat(pattern,Locale.US).parse(value.replace('T',' ')).getTime();}catch(Exception ignored){}return System.currentTimeMillis(); }
             JSArray sleepStageJson(){JSArray result=new JSArray();result.put(new JSObject().put("stage","awake").put("minutes",awakeMinutes));result.put(new JSObject().put("stage","light").put("minutes",lightMinutes));result.put(new JSObject().put("stage","deep").put("minutes",deepMinutes));result.put(new JSObject().put("stage","rem").put("minutes",remMinutes));result.put(new JSObject().put("stage","unknown").put("minutes",unknownMinutes));return result;}

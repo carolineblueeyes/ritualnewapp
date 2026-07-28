@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wind, Activity, Compass, Volume2, Heart } from 'lucide-react';
+import { Wind, Activity, Compass, Volume2, Heart, FlaskConical } from 'lucide-react';
 import { Practice } from '../types';
 import { standaloneData, StandalonePractice, STANDALONE_GROUP_COLORS, STANDALONE_GROUP_TITLES, ChapterId } from '../data/practices';
 import PracticePlayer from './PracticePlayer';
@@ -12,6 +12,7 @@ interface PracticesListProps {
   practices: Practice[];
   onSelectPractice: (practice: Practice) => void;
   onSelectTool: (toolId: 'breathing' | 'activity' | 'focus' | 'atmosphere') => void;
+  onOpenInsights?: () => void;
 }
 
 type FilterMood = 'all' | 'favorites' | 'istok' | 'tishina' | 'energiya' | 'yasnost';
@@ -56,7 +57,7 @@ const TOOL_CARDS = [
   },
 ];
 
-export default function PracticesList({ practices, onSelectPractice, onSelectTool }: PracticesListProps) {
+export default function PracticesList({ practices, onSelectPractice, onSelectTool, onOpenInsights }: PracticesListProps) {
   const [activeFilter, setActiveFilter] = useState<FilterMood>('istok');
   const [activeStandalone, setActiveStandalone] = useState<StandalonePractice | null>(null);
 
@@ -151,6 +152,11 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
           })}
         </div>
       </div>
+
+      <button onClick={onOpenInsights} className="rounded-2xl border border-sky-300/10 bg-sky-300/[0.035] p-4 flex items-center gap-3 text-left">
+        <div className="w-9 h-9 rounded-xl bg-sky-300/10 flex items-center justify-center"><FlaskConical className="w-4 h-4 text-sky-200/70" /></div>
+        <div><p className="text-sm font-semibold text-white/85">Ritual Insights</p><p className="text-[10px] text-white/45 mt-0.5">Исследования внимания, сна и состояния</p></div>
+      </button>
 
       {/* Category Horizontal Filter */}
       <div className="flex flex-col gap-3">

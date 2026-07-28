@@ -1,145 +1,200 @@
-import { HealthMetrics } from './types';
+import type {
+  CyclePhase,
+  HealthHistoryByMetric,
+  HealthMetricKey,
+  HealthMetrics,
+  HealthProfileContext,
+} from './types';
+
+export type ShineDriver = 'sleep' | 'hrv' | 'restingHR' | 'activity' | 'respiratoryRate' | 'temperature';
+export type ShineTrend = 'improving' | 'declining' | 'stable' | 'unknown';
+export type ShineState = 'shining' | 'balanced' | 'tense' | 'overload' | 'waiting';
+
+export interface ShineContext extends HealthProfileContext {
+  historyByMetric?: Partial<HealthHistoryByMetric>;
+}
 
 export interface ShineBreakdown {
   hrv: number;
   sleep: number;
   activity: number;
   restingHR: number;
+  respiratoryRate: number;
+  temperature: number;
   total: number;
+  state: ShineState;
+  scores: Partial<Record<ShineDriver, number>>;
+  primaryDriver: ShineDriver | null;
+  secondaryDriver: ShineDriver | null;
+  trend: ShineTrend;
   availableMetrics: number;
   maxPossible: number;
   dataQuality: 'full' | 'partial' | 'minimal' | 'none';
+  usedPersonalBaseline: boolean;
+  spo2SafetyAdjustment: boolean;
 }
 
-const WEIGHTS = {
-  hrv: 30,
-  sleep: 25,
-  activity: 25,
-  restingHR: 20,
-} as const;
+const WEIGHTS: Record<ShineDriver, number> = {
+  sleep: 0.30,
+  hrv: 0.25,
+  restingHR: 0.15,
+  activity: 0.10,
+  respiratoryRate: 0.10,
+  temperature: 0.10,
+};
 
-const BENCHMARKS = {
-  hrv: { min: 20, optimal: 70, max: 120 },
-  sleep: { min: 4, optimal: 8, max: 10 },
-  activity: { min: 2000, optimal: 10000, max: 15000 },
-  restingHR: { min: 40, optimal: 55, max: 100 },
-} as const;
+type Baseline = { mean: number; sigma: number; lowerIsBetter?: boolean };
 
-function scoreMetric(
-  value: number,
-  benchmark: { min: number; optimal: number; max: number }
-): number {
-  if (value <= benchmark.min) return 0;
-  if (value >= benchmark.max) return 100;
+const populationBaseline = (driver: ShineDriver, context: ShineContext): Baseline => {
+  const age = context.age ?? 35;
+  const female = context.gender === 'female';
+  const base: Record<ShineDriver, Baseline> = {
+    sleep: { mean: 7.5, sigma: 1.25 },
+    hrv: { mean: age < 30 ? (female ? 65 : 60) : age < 50 ? (female ? 55 : 50) : (female ? 45 : 40), sigma: 15 },
+    restingHR: { mean: 65, sigma: 10, lowerIsBetter: true },
+    activity: { mean: 8_000, sigma: 3_000 },
+    respiratoryRate: { mean: 14, sigma: 2.5, lowerIsBetter: true },
+    temperature: { mean: 36.4, sigma: 0.35, lowerIsBetter: true },
+  };
+  return applyCycleAdjustment(driver, base[driver], context.cyclePhase ?? null);
+};
 
-  if (value <= benchmark.optimal) {
-    const range = benchmark.optimal - benchmark.min;
-    const progress = (value - benchmark.min) / range;
-    return Math.round(progress * 85);
+function applyCycleAdjustment(driver: ShineDriver, baseline: Baseline, phase: CyclePhase): Baseline {
+  if (!phase) return baseline;
+  const adjusted = { ...baseline };
+  if (driver === 'hrv') {
+    const multipliers = { menstrual: 0.95, follicular: 1.05, ovulatory: 1.08, luteal: 0.92 };
+    adjusted.mean *= multipliers[phase];
+  } else if (driver === 'restingHR') {
+    adjusted.mean += { menstrual: 3, follicular: -2, ovulatory: -4, luteal: 4 }[phase];
+  } else if (driver === 'temperature') {
+    adjusted.mean += { menstrual: -0.1, follicular: 0, ovulatory: 0.2, luteal: 0.2 }[phase];
   }
-
-  const range = benchmark.max - benchmark.optimal;
-  const progress = (value - benchmark.optimal) / range;
-  return Math.round(85 + progress * 15);
+  return adjusted;
 }
 
-function scoreHRV(value: number): number {
-  if (value <= 20) return 0;
-  if (value >= 120) return 100;
-  if (value <= 50) {
-    return Math.round(((value - 20) / 30) * 70);
-  }
-  if (value <= 70) {
-    return Math.round(70 + ((value - 50) / 20) * 20);
-  }
-  return Math.round(90 + ((value - 70) / 50) * 10);
+function meanAndSigma(values: number[]): Baseline | null {
+  if (values.length < 7) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
+  return { mean, sigma: Math.max(Math.sqrt(variance), Math.abs(mean) * 0.05, 0.1) };
 }
 
-function scoreRestingHR(value: number): number {
-  if (value <= 40) return 100;
-  if (value <= 55) return Math.round(90 + ((55 - value) / 15) * 10);
-  if (value <= 70) return Math.round(60 + ((70 - value) / 15) * 30);
-  if (value <= 90) return Math.round(20 + ((90 - value) / 20) * 40);
-  return Math.round(Math.max(0, 20 - (value - 90)));
+function personalBaseline(metric: HealthMetricKey, context: ShineContext): Baseline | null {
+  const points = context.historyByMetric?.[metric] ?? [];
+  return meanAndSigma(points.filter(point => point.status === 'available' && point.value !== null).slice(-30).map(point => point.value as number));
 }
 
-export function calculateShine(metrics: HealthMetrics, _practicesCompleted = 0): ShineBreakdown {
-  const scores: Partial<Record<keyof typeof WEIGHTS, number>> = {};
-  let availableMetrics = 0;
+function sigmoidScore(value: number, baseline: Baseline): number {
+  const z = (value - baseline.mean) / baseline.sigma;
+  const normalized = 1 / (1 + Math.exp(-1.2 * z));
+  return Math.round(100 * (baseline.lowerIsBetter ? 1 - normalized : normalized));
+}
 
-  if (metrics.hrv !== null && metrics.hrv !== undefined) {
-    scores.hrv = scoreHRV(metrics.hrv);
-    availableMetrics++;
+function sleepScore(metrics: HealthMetrics, baseline: Baseline): number {
+  const duration = sigmoidScore(metrics.sleepHours!, baseline);
+  const deep = metrics.deepSleepPercent == null ? duration : Math.max(0, Math.min(100, metrics.deepSleepPercent * 3.5));
+  const interruptions = metrics.sleepInterruptions == null
+    ? duration
+    : sigmoidScore(metrics.sleepInterruptions, { mean: 2, sigma: 1.5, lowerIsBetter: true });
+  return Math.round(duration * 0.5 + deep * 0.3 + interruptions * 0.2);
+}
+
+function driverValue(driver: ShineDriver, metrics: HealthMetrics): number | null {
+  if (driver === 'sleep') return metrics.sleepHours;
+  if (driver === 'activity') return metrics.steps;
+  return metrics[driver] ?? null;
+}
+
+function driverMetric(driver: ShineDriver): HealthMetricKey {
+  if (driver === 'sleep') return 'sleepHours';
+  if (driver === 'activity') return 'steps';
+  return driver;
+}
+
+function calculateTrend(driver: ShineDriver | null, context: ShineContext): ShineTrend {
+  if (!driver) return 'unknown';
+  const points = (context.historyByMetric?.[driverMetric(driver)] ?? [])
+    .filter(point => point.status === 'available' && point.value !== null)
+    .slice(-3)
+    .map(point => point.value as number);
+  if (points.length < 3) return 'unknown';
+  const baseline = populationBaseline(driver, context);
+  const normalized = points.map(value => baseline.lowerIsBetter ? -value : value);
+  if (normalized[0] < normalized[1] && normalized[1] < normalized[2]) return 'improving';
+  if (normalized[0] > normalized[1] && normalized[1] > normalized[2]) return 'declining';
+  return 'stable';
+}
+
+export function calculateShine(metrics: HealthMetrics, context: ShineContext | number = {}): ShineBreakdown {
+  const resolvedContext: ShineContext = typeof context === 'number' ? {} : context;
+  const scores: Partial<Record<ShineDriver, number>> = {};
+  let usedPersonalBaseline = false;
+
+  for (const driver of Object.keys(WEIGHTS) as ShineDriver[]) {
+    const value = driverValue(driver, metrics);
+    if (value == null) continue;
+    const personal = personalBaseline(driverMetric(driver), resolvedContext);
+    const baseline = personal
+      ? { ...personal, lowerIsBetter: populationBaseline(driver, resolvedContext).lowerIsBetter }
+      : populationBaseline(driver, resolvedContext);
+    usedPersonalBaseline ||= Boolean(personal);
+    scores[driver] = driver === 'sleep' ? sleepScore(metrics, baseline) : sigmoidScore(value, baseline);
   }
 
-  if (metrics.sleepHours !== null && metrics.sleepHours !== undefined) {
-    scores.sleep = scoreMetric(metrics.sleepHours, BENCHMARKS.sleep);
-    availableMetrics++;
-  }
+  const entries = Object.entries(scores) as [ShineDriver, number][];
+  const availableWeight = entries.reduce((sum, [driver]) => sum + WEIGHTS[driver], 0);
+  const canCalculate = metrics.hrv != null || metrics.restingHR != null;
+  let total = entries.length && canCalculate
+    ? Math.round(entries.reduce((sum, [driver, score]) => sum + score * WEIGHTS[driver], 0) / availableWeight)
+    : 0;
+  const spo2SafetyAdjustment = metrics.spo2 != null && metrics.spo2 < 93;
+  if (spo2SafetyAdjustment) total = Math.max(0, total - 15);
 
-  if (metrics.steps !== null && metrics.steps !== undefined) {
-    scores.activity = scoreMetric(metrics.steps, BENCHMARKS.activity);
-    availableMetrics++;
-  }
-
-  if (metrics.restingHR !== null && metrics.restingHR !== undefined) {
-    scores.restingHR = scoreRestingHR(metrics.restingHR);
-    availableMetrics++;
-  }
-
-  const maxPossible = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
-
-  if (availableMetrics === 0) {
-    return {
-      hrv: 0,
-      sleep: 0,
-      activity: 0,
-      restingHR: 0,
-      total: 0,
-      availableMetrics: 0,
-      maxPossible,
-      dataQuality: 'none',
-    };
-  }
-
-  const total = Math.min(100, Math.round(
-    Object.entries(WEIGHTS)
-      .filter(([key]) => scores[key as keyof typeof WEIGHTS] !== undefined)
-      .reduce((sum, [key, weight]) => {
-        return sum + (scores[key as keyof typeof WEIGHTS]! * weight) / 100;
-      }, 0)
-  ));
-
-  let dataQuality: ShineBreakdown['dataQuality'] = 'minimal';
-  if (availableMetrics >= 4) dataQuality = 'full';
-  else if (availableMetrics >= 2) dataQuality = 'partial';
+  const ranked = entries
+    .map(([driver, score]) => ({ driver, deviation: Math.abs(score / 100 - 0.5), score }))
+    .sort((a, b) => b.deviation - a.deviation);
+  const primaryDriver = ranked[0]?.driver ?? null;
+  const secondaryDriver = ranked[1] && ranked[0] && ranked[0].deviation - ranked[1].deviation <= 0.1
+    ? ranked[1].driver
+    : null;
+  const state: ShineState = !entries.length || !canCalculate
+    ? 'waiting'
+    : total >= 80 ? 'shining' : total >= 60 ? 'balanced' : total >= 40 ? 'tense' : 'overload';
 
   return {
     hrv: scores.hrv ?? 0,
     sleep: scores.sleep ?? 0,
     activity: scores.activity ?? 0,
     restingHR: scores.restingHR ?? 0,
+    respiratoryRate: scores.respiratoryRate ?? 0,
+    temperature: scores.temperature ?? 0,
     total,
-    availableMetrics,
-    maxPossible,
-    dataQuality,
+    state,
+    scores,
+    primaryDriver,
+    secondaryDriver,
+    trend: calculateTrend(primaryDriver, resolvedContext),
+    availableMetrics: entries.length,
+    maxPossible: 100,
+    dataQuality: entries.length >= 6 ? 'full' : entries.length >= 4 ? 'partial' : entries.length ? 'minimal' : 'none',
+    usedPersonalBaseline,
+    spo2SafetyAdjustment,
   };
 }
 
 export function getShineLabel(score: number, dataQuality: string): string {
-  if (dataQuality === 'none') return 'Нет данных';
-  if (score >= 85) return 'Сияешь';
-  if (score >= 70) return 'В балансе';
-  if (score >= 50) return 'Напряжён';
-  if (score >= 25) return 'Восстанавливаешься';
-  return 'Начни с практики';
+  if (dataQuality === 'none') return 'Ждём данные';
+  if (score >= 80) return 'Сияешь';
+  if (score >= 60) return 'В балансе';
+  if (score >= 40) return 'Напряжён';
+  return 'Перегруз';
 }
 
 export function getShineColor(score: number, dataQuality: string): string {
-  if (dataQuality === 'none') return '#ffffff40';
-  if (score >= 85) return '#6ee7b7';
-  if (score >= 70) return '#93c5fd';
-  if (score >= 50) return '#fcd34d';
-  if (score >= 25) return '#fdba74';
-  return '#fca5a5';
+  if (dataQuality === 'none') return '#94a3b8';
+  if (score >= 80) return '#6ee7b7';
+  if (score >= 60) return '#7dd3fc';
+  if (score >= 40) return '#fbbf24';
+  return '#fb7185';
 }

@@ -12,7 +12,6 @@ import RitualRingAnalytics from './RitualRingAnalytics';
 import ConnectHealthModal from './ConnectHealthModal';
 import SelectModal from './SelectModal';
 import TimePickerModal, { normalizeTime } from './TimePickerModal';
-import { useHealthData } from '../hooks/useHealthData';
 import { DataSource } from '../services/health/manager';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
@@ -21,6 +20,7 @@ import {
   DailyHealthPoint,
   EMPTY_AVAILABILITY_BY_METRIC,
   EMPTY_HISTORY_BY_METRIC,
+  EMPTY_METRICS,
   HealthAvailabilityByMetric,
   HealthHistoryByMetric,
   HealthMetrics,
@@ -357,17 +357,15 @@ export default function RitualDashboard({
   const [showEditTimePicker, setShowEditTimePicker] = useState(false);
   const [showNewTimePicker, setShowNewTimePicker] = useState(false);
 
-  const { 
-    metrics: dashboardHealthMetrics,
-    historyByMetric: dashboardHistoryByMetric,
-    availabilityByMetric: dashboardAvailabilityByMetric,
-    hasRing: dashboardHasRing,
-    refresh: refreshDashboardHealth
-  } = useHealthData();
-
-  const healthMetrics = healthMetricsProp || dashboardHealthMetrics;
-  const historyByMetric = historyByMetricProp || dashboardHistoryByMetric;
-  const availabilityByMetric = availabilityByMetricProp || dashboardAvailabilityByMetric;
+  // App owns the health-data lifecycle. Reusing its snapshot here keeps the
+  // dashboard instant when the tab remounts and avoids another BLE ring sync.
+  const healthMetrics = healthMetricsProp ?? EMPTY_METRICS;
+  const historyByMetric = historyByMetricProp ?? EMPTY_HISTORY_BY_METRIC;
+  const availabilityByMetric = availabilityByMetricProp ?? EMPTY_AVAILABILITY_BY_METRIC;
+  const dashboardHasRing = healthSource === 'ring';
+  const refreshDashboardHealth = async () => {
+    await onRefreshHealth?.();
+  };
 
   // Weekly chart data
   function normalizeHistoryDate(dateStr: string): string {
@@ -492,7 +490,6 @@ export default function RitualDashboard({
     const result = await connectHealthSource(getCurrentHealthSourceType(), {
       onRefresh: async () => {
         await refreshDashboardHealth();
-        await onRefreshHealth?.();
       },
       onSyncing: setIsHealthConnecting,
       onStep: setHealthConnectStep,

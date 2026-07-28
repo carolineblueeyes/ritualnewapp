@@ -2,6 +2,7 @@ import type { UserStats } from '../../types';
 import { normalizeHistoryDate, parseStoredStats } from '../progressStats';
 import type { DataSource } from '../health/manager';
 import type { ShineBreakdown } from '../health/shine';
+import type { HealthMetrics } from '../health/types';
 import { ensureAnonymousSession, hasSupabaseConfig, supabase } from './client';
 
 export const PRIVACY_SAFE_SYNC_EVENT = 'ritual:privacy-safe-sync-request';
@@ -13,6 +14,7 @@ interface PrivacySafeSyncInput {
   stats?: UserStats;
   shine?: ShineBreakdown;
   healthSource?: DataSource;
+  healthMetrics?: HealthMetrics;
   onboardingCompleted?: boolean;
 }
 
@@ -153,7 +155,34 @@ function buildHealthDerived(userId: string, shine?: ShineBreakdown, healthSource
     score: Math.max(0, Math.min(100, Math.round(shine.total))),
     data_quality: shine.dataQuality,
     source_kind: healthSource ?? 'none',
-    trend_bucket: 'unknown',
+    trend_bucket: shine?.trend ?? 'unknown',
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function buildHealthDailySnapshot(userId: string, shine?: ShineBreakdown, healthSource?: DataSource, metrics?: HealthMetrics) {
+  if (!shine || !metrics) return null;
+  const aggregate = {
+    hrv: metrics.hrv,
+    sleep_hours: metrics.sleepHours,
+    steps: metrics.steps,
+    resting_hr: metrics.restingHR,
+    spo2: metrics.spo2,
+    temperature: metrics.temperature,
+    respiratory_rate: metrics.respiratoryRate,
+    active_calories: metrics.calories ?? null,
+  };
+  return {
+    user_id: userId,
+    date: todayKey(),
+    metrics: aggregate,
+    shine_score: shine.total,
+    shine_state: shine.state,
+    primary_driver: shine.primaryDriver,
+    secondary_driver: shine.secondaryDriver,
+    trend: shine.trend,
+    data_quality: shine.dataQuality,
+    source_kind: healthSource ?? 'none',
     updated_at: new Date().toISOString(),
   };
 }
@@ -239,6 +268,7 @@ export async function syncPrivacySafeState(input: PrivacySafeSyncInput = {}): Pr
   const intention = buildIntention(userId);
   const preferences = buildPreferences(userId, input.onboardingCompleted);
   const healthDerived = buildHealthDerived(userId, input.shine, input.healthSource);
+  const healthDailySnapshot = buildHealthDailySnapshot(userId, input.shine, input.healthSource, input.healthMetrics);
 
   if (practiceEvents.length > 0) {
     const { error } = await supabase
@@ -279,6 +309,14 @@ export async function syncPrivacySafeState(input: PrivacySafeSyncInput = {}): Pr
     const { error } = await supabase
       .from('health_daily_derived')
       .upsert(healthDerived, { onConflict: 'user_id,date' });
+    if (error) throw error;
+  }
+
+
+  if (healthDailySnapshot) {
+    const { error } = await supabase
+      .from('health_daily_snapshots')
+      .upsert(healthDailySnapshot, { onConflict: 'user_id,date' });
     if (error) throw error;
   }
 

@@ -17,6 +17,7 @@ import TimePickerModal, { normalizeTime } from './TimePickerModal';
 import RingConnectionWizard from './RingConnectionWizard';
 import { requestPrivacySafeSync, pullPreferencesFromSupabase } from '../services/supabase/privacySync';
 import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged, signOutAuth } from '../services/supabase/auth';
+import ProfileProductSettings from './ProfileProductSettings';
 
 interface ProfileProps {
   onOpenSubscription: () => void;
@@ -34,6 +35,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   const [authDisplayName, setAuthDisplayName] = useState('Гость Ritual');
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(userName);
+  const [avatarUrl, setAvatarUrl] = useState(() => localStorage.getItem('ritual_avatar_data_url') || '');
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     const val = localStorage.getItem(STORAGE_KEYS.enabled);
@@ -152,6 +154,29 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
       requestPrivacySafeSync();
     }
     setIsEditingName(false);
+  };
+
+  const handleAvatarFile = (file?: File) => {
+    if (!file || !file.type.startsWith('image/') || file.size > 1_500_000) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = typeof reader.result === 'string' ? reader.result : '';
+      if (!value) return;
+      localStorage.setItem('ritual_avatar_data_url', value);
+      setAvatarUrl(value);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const shareReferral = async () => {
+    let referralHash = 2166136261;
+    for (const char of String(userName || 'ritual')) {
+      referralHash = Math.imul(referralHash ^ (char.codePointAt(0) || 0), 16777619) >>> 0;
+    }
+    const code = referralHash.toString(36).slice(0, 8).toUpperCase();
+    const text = `Попробуй Ritual: https://ritual.app/invite/${code}`;
+    if (navigator.share) await navigator.share({ title: 'Попробуй Ritual', text }).catch(() => undefined);
+    else await navigator.clipboard?.writeText(text);
   };
 
   const handleSignOut = async () => {
@@ -280,9 +305,10 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
 
         {/* Avatar */}
         <div className="relative mb-4 z-10">
-          <div className="w-20 h-20 rounded-full bg-white/[0.04] flex items-center justify-center border border-white/[0.08]">
-            <User className="w-10 h-10 text-white/40" />
-          </div>
+          <label className="w-20 h-20 rounded-full bg-white/[0.04] flex items-center justify-center border border-white/[0.08] overflow-hidden cursor-pointer" title="Сменить аватар">
+            {avatarUrl ? <img src={avatarUrl} alt="Аватар" className="w-full h-full object-cover" /> : <User className="w-10 h-10 text-white/40" />}
+            <input type="file" accept="image/*" className="hidden" onChange={event => handleAvatarFile(event.target.files?.[0])} />
+          </label>
           {isSubscribed && (
             <span className="absolute -bottom-1 -right-1 bg-white/[0.1] border border-white/[0.08] text-white/60 text-[8px] uppercase tracking-wider py-0.5 px-1.5 rounded-full">
               Plus
@@ -571,12 +597,12 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           <span className="text-xs font-semibold text-white/80">Друзья и подарки</span>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <button className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl flex flex-col items-start gap-1 text-left">
+          <button onClick={() => window.prompt('Введите подарочный код Ritual')} className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl flex flex-col items-start gap-1 text-left">
             <Gift className="w-4 h-4 text-white/60" />
             <span className="text-xs font-semibold text-white/80 mt-1">Подарочный код</span>
             <span className="text-[10px] text-white/55 font-medium">Активировать Plus</span>
           </button>
-          <button className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl flex flex-col items-start gap-1 text-left">
+          <button onClick={() => void shareReferral()} className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl flex flex-col items-start gap-1 text-left">
             <Heart className="w-4 h-4 text-white/60" />
             <span className="text-xs font-semibold text-white/80 mt-1">Пригласить друга</span>
             <span className="text-[10px] text-white/55 font-medium">7 дней премиума</span>
@@ -679,10 +705,12 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           </div>
           <span className="text-xs font-semibold text-white/80">Поддержка</span>
         </div>
-        <button className="py-1.5 px-3 rounded-lg bg-white/[0.06] text-[11px] text-white/70 font-medium">
+        <button onClick={() => { window.location.href = 'mailto:support@ritual.app?subject=Ritual%20Support'; }} className="py-1.5 px-3 rounded-lg bg-white/[0.06] text-[11px] text-white/70 font-medium">
           Написать
         </button>
       </div>
+
+      <ProfileProductSettings />
 
       {/* Actions */}
       <div className="flex flex-col gap-3">
