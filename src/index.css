@@ -19,6 +19,131 @@
     scrollbar-width: none !important;
   }
 
+  .ritual-veil {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    border-color: rgba(255,255,255,0.035) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+  }
+
+  .ritual-veil::before {
+    content: "";
+    position: absolute;
+    inset: -18%;
+    z-index: -2;
+    background:
+      radial-gradient(circle at 28% 18%, color-mix(in srgb, var(--veil-color, #a78bfa) 24%, transparent), transparent 34%),
+      radial-gradient(circle at 78% 36%, rgba(255, 255, 255, 0.075), transparent 30%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 42%);
+    filter: blur(22px);
+    opacity: 0.52;
+    animation: ritual-veil-drift 12s ease-in-out infinite alternate;
+  }
+
+  .ritual-nebula {
+    background:
+      radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--nebula-color, #a78bfa) 20%, transparent), transparent 34%),
+      radial-gradient(circle at 50% 82%, rgba(255, 255, 255, 0.055), transparent 42%),
+      #050507;
+  }
+
+  .ritual-flow {
+    isolation: isolate;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 4%, color-mix(in srgb, var(--flow-color, #e6b85c) 24%, transparent), transparent 34%),
+      radial-gradient(ellipse at 50% 44%, rgba(255,255,255,0.055), transparent 44%),
+      radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--flow-color, #e6b85c) 10%, transparent), transparent 46%),
+      #020204;
+  }
+
+  .ritual-flow:not(.fixed) {
+    position: relative;
+  }
+
+  .ritual-flow::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.05), transparent 18%, transparent 72%, rgba(255,255,255,0.035)),
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.024) 0 1px, transparent 1px 92px);
+    mask-image: linear-gradient(180deg, transparent, #000 10%, #000 88%, transparent);
+    opacity: 0.66;
+    pointer-events: none;
+  }
+
+  .ritual-flow-section {
+    position: relative;
+  }
+
+  .ritual-flow-section::after {
+    content: "";
+    position: absolute;
+    left: 1.25rem;
+    right: 1.25rem;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+    opacity: 0.58;
+  }
+
+  .ritual-bentoless .glass-card,
+  .ritual-bentoless [class*="rounded-2xl"][class*="border"][class*="bg-white/"],
+  .ritual-bentoless [class*="rounded-3xl"][class*="border"][class*="bg-white/"],
+  .ritual-bentoless [class*="rounded-[24px]"][class*="border"][class*="bg-white/"] {
+    background: transparent !important;
+    border-left-color: transparent !important;
+    border-right-color: transparent !important;
+    border-top-color: rgba(255,255,255,0.045) !important;
+    border-bottom-color: rgba(255,255,255,0.07) !important;
+    box-shadow: none !important;
+  }
+
+  .ritual-bentoless [class*="shadow-2xl"][class*="bg-white/"],
+  .ritual-bentoless [class*="shadow-xl"][class*="bg-white/"] {
+    box-shadow: none !important;
+  }
+
+  .metric-hairline {
+    height: 1px;
+    width: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+  }
+
+  .animate-soft-pulse {
+    animation: ritual-soft-pulse 5.5s ease-in-out infinite;
+  }
+
+  .ritual-sheet {
+    background:
+      radial-gradient(circle at 50% -10%, color-mix(in srgb, var(--sheet-color, #e6b85c) 18%, transparent), transparent 36%),
+      linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012) 42%, rgba(255,255,255,0.018)),
+      rgba(5, 5, 8, 0.96);
+    border: 1px solid rgba(255,255,255,0.045);
+    box-shadow: 0 -34px 110px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.035);
+  }
+
+  .ritual-primary-action {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--action-from, #f4f1ea) 92%, white), var(--action-to, #e6b85c));
+    color: #050507;
+    box-shadow: 0 18px 42px color-mix(in srgb, var(--action-to, #e6b85c) 22%, transparent);
+  }
+
+  .ritual-soft-control {
+    background: rgba(255,255,255,0.032);
+    border: 1px solid rgba(255,255,255,0.045);
+    color: rgba(255,255,255,0.72);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .ritual-soft-control:focus-within {
+    border-color: rgba(255,255,255,0.16);
+  }
+
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0px);
   }
@@ -141,6 +266,35 @@ html::-webkit-scrollbar, body::-webkit-scrollbar, #root::-webkit-scrollbar {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes ritual-veil-drift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2%, 1.5%, 0) scale(1.06);
+  }
+}
+
+@keyframes ritual-soft-pulse {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scale(0.985);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.015);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ritual-veil::before,
+  .animate-soft-pulse,
+  .voice-console-tick {
+    animation: none !important;
+    transition: none !important;
   }
 }
 

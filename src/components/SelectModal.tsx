@@ -40,7 +40,7 @@ export default function SelectModal({ isOpen, onClose, title, options, selectedV
     : options;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-xl">
       <div className="absolute inset-0" onClick={onClose} />
 
       <motion.div
@@ -48,30 +48,31 @@ export default function SelectModal({ isOpen, onClose, title, options, selectedV
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-        className="relative w-full max-w-md bg-[#0e0e16]/95 border-t border-white/10 rounded-t-[40px] px-6 pt-5 pb-8 shadow-2xl z-10"
+        className="ritual-sheet relative w-full max-w-md rounded-t-[40px] px-6 pt-5 pb-8 z-10 overflow-hidden"
+        style={{ '--sheet-color': '#e6b85c' } as React.CSSProperties}
       >
         <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-6" />
 
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/5 border border-white/5 flex items-center justify-center text-white/60 hover:text-white"
+          className="absolute top-5 right-5 w-8 h-8 rounded-full ritual-soft-control flex items-center justify-center text-white/60 hover:text-white"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <h3 className="text-sm font-semibold text-white text-center mb-4">{title}</h3>
+        <h3 className="text-sm font-semibold text-white text-center mb-4 tracking-wide">{title}</h3>
 
         {/* Category Tabs inside SelectModal */}
         {hasCategories && (
-          <div className="grid grid-cols-4 gap-1 p-1 bg-white/[0.02] border border-white/5 rounded-xl mb-4">
+          <div className="grid grid-cols-4 gap-1 border-b border-white/[0.08] mb-4">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.value}
                 onClick={() => setActiveCategory(cat.value)}
-                className={`py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                className={`border-b py-2 text-[11px] font-medium transition-all ${
                   activeCategory === cat.value
-                    ? 'bg-white/10 text-white font-semibold'
-                    : 'text-white/40 hover:text-white/60'
+                    ? 'border-amber-300 text-white font-semibold'
+                    : 'border-transparent text-white/40 hover:text-white/60'
                 }`}
               >
                 {cat.label}
@@ -86,10 +87,10 @@ export default function SelectModal({ isOpen, onClose, title, options, selectedV
               <button
                 key={option.value}
                 onClick={() => { onSelect(option.value); onClose(); }}
-                className={`flex items-center justify-between p-4 rounded-2xl border transition-all duration-200 ${
+                className={`flex items-center justify-between border-b py-4 transition-all duration-200 ${
                   selectedValue === option.value
-                    ? 'bg-white/[0.06] border-white/15'
-                    : 'bg-white/[0.02] border-white/5 hover:border-white/10'
+                    ? 'border-amber-300/70'
+                    : 'border-white/[0.065] hover:border-white/15'
                 }`}
               >
                 <span className="text-sm text-white/80">{option.label}</span>

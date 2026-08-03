@@ -4,6 +4,10 @@ import { ChevronLeft, Play, Pause, Clock, AlertTriangle, Volume2, Shield, BarCha
 import { scheduleFocusBreak, rescheduleAll } from '../services/notifications';
 import { notificationService } from '../services/notifications';
 import { audioEngine } from '../services/audioEngine';
+import ParticleSphere from './ui/particle-sphere';
+import RitualTickPicker from './ui/ritual-tick-picker';
+import RitualArcGauge from './ui/ritual-arc-gauge';
+import RitualHeatMapField from './ui/ritual-heat-map-field';
 
 interface FocusToolProps {
   onClose: () => void;
@@ -28,6 +32,7 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
   const [cycles, setCycles] = useState(1);
   const [taskName, setTaskName] = useState('');
   const [blockNotifications, setBlockNotifications] = useState(true);
+  const [focusGoal, setFocusGoal] = useState('Deep work');
 
   // Soundscape state
   const [isSoundOn, setIsSoundOn] = useState(true);
@@ -283,15 +288,16 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
     { id: 'ideas', title: 'Поток идей', desc: '45 Гц креативность' },
     { id: 'candle', title: 'Свеча', desc: 'Мирный треск огня' }
   ];
+  const focusGoals = ['Deep work', 'Study', 'Reading', 'No phone', 'Creative flow'];
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#070709] text-white flex flex-col justify-between p-6 select-none overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-[#070709] text-white flex flex-col justify-between p-6 select-none overflow-hidden ritual-nebula" style={{ '--nebula-color': isBreak ? '#10b981' : '#8fb7ff' } as React.CSSProperties}>
       
       {/* Dynamic backdrop reflection glow of Living Glass */}
       <motion.div 
         className="absolute inset-0 z-0 pointer-events-none transition-all duration-1000"
         style={{
-          background: `radial-gradient(circle at 50% 30%, ${isBreak ? '#10b981' : color}18 0%, transparent 70%)`
+          background: `radial-gradient(circle at 50% 30%, ${isBreak ? '#10b981' : '#8fb7ff'}22 0%, transparent 70%)`
         }}
       />
 
@@ -341,69 +347,54 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
                   value={taskName}
                   onChange={(e) => setTaskName(e.target.value)}
                   placeholder="Текущая задача"
-                  className="w-full h-12 bg-white/[0.03] border border-white/10 rounded-2xl px-4 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/20 transition-all font-sans"
+                  className="w-full h-12 border-b border-white/[0.12] bg-transparent px-1 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/25 transition-all font-sans"
                 />
               </div>
 
-              {/* Work Segment Picker */}
-              <div className="p-4 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col gap-2.5">
-                <div className="flex justify-between items-center text-[10px] font-mono">
-                  <span className="text-white/40 uppercase">ВРЕМЯ РАБОТЫ</span>
-                  <span className="font-semibold text-sky-400">{workTime} МИНУТ</span>
-                </div>
-                <div className="grid grid-cols-5 gap-1.5">
-                  {[15, 25, 45, 60, 90].map((mins) => {
-                    const isSelected = workTime === mins;
-                    return (
-                      <button
-                        key={mins}
-                        type="button"
-                        onClick={() => { triggerHaptic('light'); setWorkTime(mins); }}
-                        className={`py-2 rounded-xl text-xs font-mono border transition-all ${
-                          isSelected 
-                            ? 'bg-sky-500/15 border-sky-500/40 text-sky-300 font-bold'
-                            : 'bg-white/5 border-white/5 text-white/60 hover:border-white/10'
-                        }`}
-                      >
-                        {mins}м
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <RitualTickPicker
+                label="work"
+                value={workTime}
+                values={[10, 15, 20, 25, 30, 45, 60, 75, 90]}
+                unit="min"
+                color="#8fb7ff"
+                onChange={(mins) => { triggerHaptic('light'); setWorkTime(mins); }}
+              />
 
-              {/* Rest Segment Picker */}
-              <div className="p-4 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col gap-2.5">
-                <div className="flex justify-between items-center text-[10px] font-mono">
-                  <span className="text-white/40 uppercase">ИНТЕРВАЛ ОТДЫХА</span>
-                  <span className="font-semibold text-emerald-400">{breakTime} МИНУТ</span>
+              <RitualTickPicker
+                label="rest"
+                value={breakTime}
+                values={[3, 5, 7, 10, 12, 15, 20]}
+                unit="min"
+                color="#10b981"
+                onChange={(mins) => { triggerHaptic('light'); setBreakTime(mins); }}
+              />
+
+              <div className="border-y border-white/[0.07] py-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/40">цель фокуса</span>
+                  <span className="text-[10px] font-mono text-[#8fb7ff]">{focusGoal}</span>
                 </div>
-                <div className="grid grid-cols-5 gap-1.5">
-                  {[3, 5, 10, 15, 20].map((mins) => {
-                    const isSelected = breakTime === mins;
-                    return (
-                      <button
-                        key={mins}
-                        type="button"
-                        onClick={() => { triggerHaptic('light'); setBreakTime(mins); }}
-                        className={`py-2 rounded-xl text-xs font-mono border transition-all ${
-                          isSelected 
-                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-bold'
-                            : 'bg-white/5 border-white/5 text-white/60 hover:border-white/10'
-                        }`}
-                      >
-                        {mins}м
-                      </button>
-                    );
-                  })}
+                <div className="flex gap-4 overflow-x-auto hide-scrollbar">
+                  {focusGoals.map((goal) => (
+                    <button
+                      key={goal}
+                      type="button"
+                      onClick={() => { triggerHaptic('light'); setFocusGoal(goal); }}
+                      className={`flex-none border-b pb-2 text-xs transition-all ${
+                        focusGoal === goal ? 'border-[#8fb7ff] text-white' : 'border-white/[0.08] text-white/45'
+                      }`}
+                    >
+                      {goal}
+                    </button>
+                  ))}
                 </div>
               </div>
 
               {/* Cycle picker */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-4 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col justify-between">
+                <div className="border-b border-white/[0.07] py-4 flex flex-col justify-between">
                   <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider block mb-1">ЦИКЛЫ</span>
-                  <div className="flex items-center justify-between bg-white/5 py-1 px-2.5 rounded-xl border border-white/5 mt-1">
+                  <div className="flex items-center justify-between py-1 mt-1">
                     <button onClick={() => { triggerHaptic('light'); setCycles(Math.max(1, cycles - 1)); }} className="text-white/50 hover:text-white font-bold text-sm px-1.5">-</button>
                     <span className="text-sm font-semibold font-mono text-white">{cycles}</span>
                     <button onClick={() => { triggerHaptic('light'); setCycles(Math.min(6, cycles + 1)); }} className="text-white/50 hover:text-white font-bold text-sm px-1.5">+</button>
@@ -411,14 +402,14 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
                 </div>
 
                 {/* Do Not Disturb toggle */}
-                <div className="p-4 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col justify-between">
+                <div className="border-b border-white/[0.07] py-4 flex flex-col justify-between">
                   <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider block mb-1">ТИХИЙ РЕЖИМ</span>
                   <button
                     onClick={() => { triggerHaptic('light'); setBlockNotifications(!blockNotifications); }}
-                    className={`flex items-center justify-between py-1.5 px-3 rounded-xl border transition-all mt-1 ${
+                    className={`flex items-center justify-between py-1.5 border-b transition-all mt-1 ${
                       blockNotifications 
-                        ? 'bg-amber-300/10 border-amber-300/30 text-amber-300' 
-                        : 'bg-white/5 border-white/5 text-white/40'
+                        ? 'border-amber-300/50 text-amber-300' 
+                        : 'border-white/[0.08] text-white/40'
                     }`}
                   >
                     <span className="text-[10px] font-sans font-semibold">{blockNotifications ? 'БЛОК' : 'РАЗРЕШЕНО'}</span>
@@ -436,7 +427,7 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
                 <div className="relative flex-1">
                   <button
                     onClick={() => { triggerHaptic('light'); setShowSoundDropdown(!showSoundDropdown); }}
-                    className="w-full h-14 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-between px-4 text-xs font-semibold text-white/80 active:scale-95 transition-transform"
+                    className="w-full h-14 border-b border-white/[0.12] bg-transparent flex items-center justify-between px-1 text-xs font-semibold text-white/80 active:scale-95 transition-transform"
                   >
                     <div className="flex items-center gap-2">
                       <Volume2 className={`w-4 h-4 ${isSoundOn ? 'text-amber-300' : 'text-white/30'}`} />
@@ -478,7 +469,7 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
                 <button
                   id="btn-focus-start"
                   onClick={startSession}
-                  className="flex-[2] h-14 rounded-2xl bg-white text-black font-semibold hover:bg-white/90 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  className="flex-[2] h-14 rounded-full bg-white text-black font-semibold hover:bg-white/90 active:scale-95 transition-all flex items-center justify-center gap-2"
                 >
                   <Play className="w-4 h-4 fill-current" />
                   <span>Начать сессию</span>
@@ -520,12 +511,13 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
 
             {/* Interactive Progress Ring container */}
             <div className="flex-1 flex flex-col items-center justify-center py-4 relative">
-              <div className="relative w-64 h-64 flex items-center justify-center">
+              <div className="relative w-72 h-72 flex items-center justify-center">
+                <ParticleSphere className="absolute inset-0 m-auto animate-soft-pulse" size={288} opacity={0.44} color={isBreak ? '#10b981' : '#8fb7ff'} particleCount={260} />
                 {/* Visual Glassmorphism glowing inner circle */}
                 <div 
-                  className="absolute inset-4 rounded-full border border-white/5 flex items-center justify-center bg-white/[0.02] backdrop-blur-md"
+                  className="absolute inset-10 rounded-full border border-white/5 flex items-center justify-center bg-black/10 backdrop-blur-[2px]"
                   style={{
-                    boxShadow: `0 0 50px -15px ${isBreak ? 'rgba(16,185,129,0.2)' : 'rgba(96,165,250,0.2)'}`
+                    boxShadow: `0 0 70px -18px ${isBreak ? 'rgba(16,185,129,0.28)' : 'rgba(143,183,255,0.34)'}` 
                   }}
                 />
 
@@ -547,7 +539,7 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
                   <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase mb-2">
                     {isBreak ? 'ВРЕМЯ ОТДЫХА' : 'ВРЕМЯ РАБОТЫ'}
                   </span>
-                  <h1 className="text-5xl font-light font-mono text-white tracking-tight leading-none mb-1">
+                  <h1 className="text-6xl font-light font-mono text-white tracking-tight leading-none mb-1">
                     {formatTime(secondsLeft)}
                   </h1>
                   <span className="text-[9px] font-mono text-white/30">осталось в цикле</span>
@@ -615,42 +607,53 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
             exit={{ opacity: 0 }}
             className="flex-1 flex flex-col justify-between z-10 max-w-md mx-auto w-full pt-4"
           >
-            <div className="text-center pt-6 flex-1 flex flex-col justify-center">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-300 mx-auto mb-5 shadow-lg">
-                <Sparkles className="w-8 h-8" />
+            <div className="pt-6 flex-1 flex flex-col justify-center gap-6">
+              <div className="text-center">
+                <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase block mb-3">focus complete</span>
+                <div className="flex items-end justify-center gap-2">
+                  <span className="text-[104px] font-light leading-[0.82] tracking-[-0.05em] text-white">
+                    {calculatePurePercent(totalWorkSeconds, distractionsCount, cheated)}
+                  </span>
+                  <span className="mb-3 text-2xl font-light text-white/42">%</span>
+                </div>
+                <p className="mx-auto mt-5 max-w-[280px] text-xs leading-relaxed text-white/50">
+                  {focusGoal} · {taskName || 'Глубокий фокус'}
+                </p>
               </div>
-              <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase block mb-1">ФОКУС СЕССИЯ ЗАВЕРШЕНА</span>
-              <h2 className="text-2xl font-light text-white">Выверенный фокус!</h2>
-              <p className="text-xs text-white/50 mt-1.5 max-w-[280px] mx-auto px-4 leading-relaxed font-sans">
-                Вы сфокусировали свое сознание на задаче: «{taskName || 'Глубокий фокус'}»
-              </p>
 
-              {/* Detailed scorecard statistics */}
-              <div className="grid grid-cols-3 gap-2.5 mt-8 max-w-sm mx-auto w-full px-2">
-                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col items-center justify-center text-center">
-                  <Clock className="w-3.5 h-3.5 text-blue-400 mb-1" />
-                  <span className="text-[8px] font-mono text-white/40 uppercase">Время</span>
-                  <span className="text-sm font-semibold font-mono text-white mt-0.5">
-                    {Math.round(totalWorkSeconds / 60)} мин
-                  </span>
+              <RitualArcGauge
+                value={calculatePurePercent(totalWorkSeconds, distractionsCount, cheated)}
+                label="purity"
+                color="#8fb7ff"
+                size={236}
+              />
+
+              <div className="grid grid-cols-3 divide-x divide-white/[0.08]">
+                <div className="px-3 text-center">
+                  <Clock className="mx-auto mb-1 h-3.5 w-3.5 text-blue-300" />
+                  <span className="text-[8px] font-mono uppercase text-white/40">minutes</span>
+                  <p className="mt-1 text-lg font-light text-white">{Math.round(totalWorkSeconds / 60)}</p>
                 </div>
-
-                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col items-center justify-center text-center">
-                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400 mb-1" />
-                  <span className="text-[8px] font-mono text-white/40 uppercase">Отвлекся</span>
-                  <span className="text-sm font-semibold font-mono text-white mt-0.5">
-                    {distractionsCount} раз
-                  </span>
+                <div className="px-3 text-center">
+                  <AlertTriangle className="mx-auto mb-1 h-3.5 w-3.5 text-rose-300" />
+                  <span className="text-[8px] font-mono uppercase text-white/40">breaks</span>
+                  <p className="mt-1 text-lg font-light text-white">{distractionsCount}</p>
                 </div>
-
-                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col items-center justify-center text-center">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400 mb-1" />
-                  <span className="text-[8px] font-mono text-white/40 uppercase">Фокус</span>
-                  <span className="text-sm font-semibold font-mono text-white mt-0.5">
-                    {calculatePurePercent(totalWorkSeconds, distractionsCount, cheated)}%
-                  </span>
+                <div className="px-3 text-center">
+                  <Sparkles className="mx-auto mb-1 h-3.5 w-3.5 text-amber-300" />
+                  <span className="text-[8px] font-mono uppercase text-white/40">cycles</span>
+                  <p className="mt-1 text-lg font-light text-white">{cycles}</p>
                 </div>
               </div>
+
+              <RitualHeatMapField
+                title="Attention"
+                xLabel="Stability"
+                yLabel="Depth"
+                primaryColor="#67e8f9"
+                secondaryColor="#4f46e5"
+                accentColor="#8fb7ff"
+              />
 
               {cheated && (
                 <div className="mt-6 mx-auto max-w-xs p-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[10px] font-sans leading-normal rounded-xl text-left flex gap-2">

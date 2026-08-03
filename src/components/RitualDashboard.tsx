@@ -12,6 +12,7 @@ import RitualRingAnalytics from './RitualRingAnalytics';
 import ConnectHealthModal from './ConnectHealthModal';
 import SelectModal from './SelectModal';
 import TimePickerModal, { normalizeTime } from './TimePickerModal';
+import ParticleSphere from './ui/particle-sphere';
 import { DataSource } from '../services/health/manager';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
@@ -30,6 +31,7 @@ import {
 import { notificationService, rescheduleAll } from '../services/notifications';
 import { ARTICLES } from '../data/articles';
 import { requestPrivacySafeSync } from '../services/supabase/privacySync';
+import SilkShaderBackground from './SilkShaderBackground';
 
 interface RitualDashboardProps {
   practices: Practice[];
@@ -526,6 +528,39 @@ export default function RitualDashboard({
     const key = metricKeyMap[uiKey];
     return key ? historyByMetric[key] || [] : [];
   };
+  const getAvailableMetricPoints = (uiKey: string, limit?: number): DailyHealthPoint[] => {
+    const points = getMetricPoints(uiKey).filter(point => point.status === 'available' && point.value !== null);
+    return typeof limit === 'number' ? points.slice(-limit) : points;
+  };
+  const formatMetricValue = (key: string, value: number, unit: string): string => {
+    if (key === 'sleep') {
+      const hours = Math.floor(value);
+      const minutes = Math.round((value % 1) * 60);
+      return `${hours}ч ${minutes}м`;
+    }
+    if (key === 'activity') return Math.round(value).toLocaleString('ru-RU');
+    if (key === 'oxygen') return `${Math.round(value)}%`;
+    if (key === 'temp') return `${value.toFixed(1)}°C`;
+    if (key === 'resp') return `${value.toFixed(1)} ${unit}`;
+    return `${Math.round(value)} ${unit}`;
+  };
+  const getMetricDelta = (uiKey: string, currentValue: number | null | undefined) => {
+    if (currentValue === null || currentValue === undefined) return null;
+    const previous = getAvailableMetricPoints(uiKey).slice(-2, -1)[0]?.value ?? null;
+    if (previous === null) return null;
+    return currentValue - previous;
+  };
+  const getAverageMetricValue = (uiKey: string, limit = 7): number | null => {
+    const values = getAvailableMetricPoints(uiKey, limit).map(point => point.value as number);
+    if (!values.length) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+  const getSleepInsight = (sleepHours: number | null | undefined, delta: number | null) => {
+    if (sleepHours === null || sleepHours === undefined) return 'Подключите источник здоровья, чтобы Ritual собрал ночной ритм.';
+    if (sleepHours >= 7.5 && (delta ?? 0) >= -0.25) return 'Сон держится в устойчивой зоне восстановления.';
+    if (sleepHours >= 6.5) return 'Ночь близка к норме. Смотрите на тренд, а не на один день.';
+    return 'Сон ниже личной нормы. Сегодня лучше выбрать мягкую нагрузку и вечерний ритуал.';
+  };
   const [healthPage, setHealthPage] = useState(0);
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<'7' | '30' | '90'>('30');
@@ -641,15 +676,9 @@ export default function RitualDashboard({
               onClick={() => setIsHealthOpen(true)}
               className="relative cursor-pointer rounded-2xl overflow-hidden"
             >
-              <div className="absolute inset-0">
-                <img 
-                  src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=1200&auto=format&fit=crop"
-                  alt=""
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 bg-gradient-to-b from-[#0a1628]/60 via-[#0a1628]/40 to-[#070709]" />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#070709] via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-[#02010A]" aria-hidden="true">
+                <SilkShaderBackground accentColor={status.color} />
+                <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-[#070709]/70" />
               </div>
 
               <div className="relative z-10 flex flex-col items-center pt-10 pb-8 px-6">
@@ -1441,7 +1470,7 @@ export default function RitualDashboard({
                     )}
 
                     {[
-                      { key: 'sleep', title: 'Сон', rawVal: healthMetrics.sleepHours, icon: Moon, unit: 'ч', baseline: 7.1, insight: 'Твой сон стабилен. Глубокие фазы в норме.', color: '#a78bfa' },
+                      { key: 'sleep', title: 'Сон', rawVal: healthMetrics.sleepHours, icon: Moon, unit: 'ч', baseline: 7.1, insight: 'Твой сон стабилен. Глубокие фазы в норме.', color: '#9fb7ff' },
                       { key: 'hrv', title: 'ВСР (Покой)', rawVal: healthMetrics.hrv, icon: Activity, unit: 'мс', baseline: 48, insight: 'Ключевой драйвер самочувствия. Высокая вариабельность = отличная кардиорегуляция.', color: '#6ee7b7' },
                       { key: 'hr', title: 'Пульс покоя', rawVal: healthMetrics.restingHR, icon: Heart, unit: 'уд/м', baseline: 65, insight: 'Пульс снижается — сердце разгружается.', inverted: true, color: '#fca5a5' },
                       { key: 'activity', title: 'Активность', rawVal: healthMetrics.steps, icon: Zap, unit: 'шагов', baseline: 8000, insight: (healthMetrics.steps ?? 0) >= 8000 ? 'Дневная норма выполнена.' : 'Продолжай накапливать активность.', color: '#fcd34d' },
@@ -1456,20 +1485,15 @@ export default function RitualDashboard({
                       const healthMetricKey = metricKeyMap[metric.key];
                       const availability = healthMetricKey ? availabilityByMetric[healthMetricKey] : 'unavailable';
 
-                      const formattedVal = hasData
-                        ? metric.key === 'sleep'
-                          ? `${Math.floor(val!)}ч ${Math.round((val! % 1) * 60)}м`
-                          : metric.key === 'activity'
-                            ? val!.toLocaleString()
-                            : metric.key === 'oxygen'
-                              ? `${val}%`
-                              : metric.key === 'temp'
-                                ? `${val} °C`
-                                : `${val} ${metric.unit}`
-                        : null;
+                      const formattedVal = hasData ? formatMetricValue(metric.key, val!, metric.unit) : null;
+                      const delta = getMetricDelta(metric.key, val);
 
                       return (
-                        <div key={metric.key} className="rounded-2xl border border-white/[0.04] bg-white/[0.02] overflow-hidden">
+                        <div
+                          key={metric.key}
+                          className="relative overflow-hidden border-b border-white/[0.07]"
+                          style={{ '--veil-color': metric.color } as React.CSSProperties}
+                        >
                           {/* Collapsed row */}
                           <div
                             onClick={() => {
@@ -1479,10 +1503,10 @@ export default function RitualDashboard({
                                 setLockedMetric({ title: metric.title, status: availability });
                               }
                             }}
-                            className="flex items-center justify-between p-3.5 cursor-pointer"
+                            className="flex items-center justify-between py-5 cursor-pointer"
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center">
+                              <div className="w-9 h-9 rounded-full bg-white/[0.025] flex items-center justify-center">
                                 <MIcon className={`w-4 h-4 ${hasData ? 'text-white/40' : 'text-white/15'}`} strokeWidth={2} />
                               </div>
                               <div className="flex flex-col">
@@ -1496,8 +1520,8 @@ export default function RitualDashboard({
                             </div>
                             {hasData ? (
                               <div className="flex items-center gap-2">
-                                <span className={`text-[11px] font-medium ${val! > metric.baseline ? 'text-emerald-400/70' : 'text-rose-400/70'}`}>
-                                  {val! > metric.baseline ? '↑' : '↓'}
+                                <span className={`text-[11px] font-medium ${delta === null ? 'text-white/35' : delta >= 0 ? 'text-emerald-300/80' : 'text-rose-300/80'}`}>
+                                  {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${metric.key === 'activity' ? Math.round(delta).toLocaleString('ru-RU') : Math.abs(delta) < 1 ? delta.toFixed(1) : Math.round(delta)}`}
                                 </span>
                                 <svg className={`w-3 h-3 text-white/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                                   <path d="M4.5 2.5L8 6L4.5 9.5" />
@@ -1520,7 +1544,91 @@ export default function RitualDashboard({
                                 transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
                                 className="overflow-hidden"
                               >
-                                <div className="px-4 pt-3 pb-5 border-t border-white/[0.04]">
+                                <div className="pt-3 pb-6">
+                                  {metric.key === 'sleep' && (
+                                    <div className="ritual-flow relative -mx-6 mb-7 min-h-[430px] overflow-hidden px-6 pb-7 pt-8" style={{ '--flow-color': '#9fb7ff' } as React.CSSProperties}>
+                                      <div className="absolute -right-10 top-0 opacity-70">
+                                        <ParticleSphere size={250} opacity={0.62} color="#9fb7ff" particleCount={220} />
+                                      </div>
+                                      {(() => {
+                                        const sleepValue = typeof val === 'number' ? val : null;
+                                        const sleepDelta = getMetricDelta('sleep', sleepValue);
+                                        const sleepAverage = getAverageMetricValue('sleep', 7);
+                                        const sleepPoints = getAvailableMetricPoints('sleep', 7);
+                                        const maxSleep = Math.max(8.5, ...sleepPoints.map(point => point.value as number));
+                                        const deep = healthMetrics.deepSleepPercent ?? null;
+                                        const interruptions = healthMetrics.sleepInterruptions ?? null;
+
+                                        return (
+                                          <div className="relative z-10">
+                                            <div className="flex items-start justify-between gap-4">
+                                              <div>
+                                                <span className="text-[10px] uppercase tracking-[0.26em] text-white/45">Sleep</span>
+                                                <div className="mt-3 flex items-end gap-2">
+                                                  <span className="text-6xl font-light leading-none text-white">{shine?.sleep ?? 0}</span>
+                                                  <span className="mb-2 text-sm text-white/45">/100</span>
+                                                </div>
+                                                <p className="mt-2 text-sm text-white/72">{formattedVal}</p>
+                                              </div>
+                                              <div className="mt-1 rounded-full bg-white/[0.035] px-3 py-1.5 text-[10px] text-white/60 backdrop-blur-md">
+                                                {sleepDelta === null ? 'нет вчера' : `${sleepDelta >= 0 ? '+' : ''}${Math.round(sleepDelta * 60)} мин к прошлой ночи`}
+                                              </div>
+                                            </div>
+
+                                            <p className="mt-5 max-w-[260px] text-[13px] leading-relaxed text-white/70">
+                                              {getSleepInsight(sleepValue, sleepDelta)}
+                                            </p>
+
+                                            <div className="metric-hairline my-5" />
+
+                                            <div className="flex h-28 items-end gap-2">
+                                              {sleepPoints.length < 2 ? (
+                                                <div className="flex h-full w-full items-center justify-center border-y border-white/[0.06] px-4 text-center text-[11px] leading-relaxed text-white/42">
+                                                  История сна появится после нескольких синхронизаций HealthKit, Health Connect или кольца.
+                                                </div>
+                                              ) : (
+                                                sleepPoints.map((point, index) => {
+                                                  const sleepPointValue = point.value as number;
+                                                  const barHeight = Math.max(16, (sleepPointValue / maxSleep) * 92);
+                                                  const isLast = index === sleepPoints.length - 1;
+                                                  const [, month, day] = point.date.split('-');
+                                                  return (
+                                                    <div key={point.date} className="flex flex-1 flex-col items-center gap-2">
+                                                      <div className="flex h-24 w-full items-end justify-center">
+                                                        <motion.div
+                                                          initial={{ height: 0, opacity: 0 }}
+                                                          animate={{ height: barHeight, opacity: 1 }}
+                                                          transition={{ duration: 0.45, delay: index * 0.035 }}
+                                                          className={`w-full max-w-[24px] rounded-t-full ${isLast ? 'bg-[#dfe8ff]' : 'bg-[#5f77d8]/70'}`}
+                                                          style={{ boxShadow: isLast ? '0 0 24px rgba(159,183,255,0.42)' : undefined }}
+                                                        />
+                                                      </div>
+                                                      <span className={`text-[9px] ${isLast ? 'text-white/80' : 'text-white/30'}`}>{parseInt(day, 10)}.{month}</span>
+                                                    </div>
+                                                  );
+                                                })
+                                              )}
+                                            </div>
+
+                                            <div className="mt-4 grid grid-cols-3 gap-3 border-t border-white/[0.045] pt-4">
+                                              <div>
+                                                <span className="block text-[9px] uppercase tracking-widest text-white/35">7 days</span>
+                                                <span className="mt-1 block text-lg text-white/90">{sleepAverage === null ? '—' : formatMetricValue('sleep', sleepAverage, metric.unit)}</span>
+                                              </div>
+                                              <div>
+                                                <span className="block text-[9px] uppercase tracking-widest text-white/35">Deep</span>
+                                                <span className="mt-1 block text-lg text-white/90">{deep === null ? '—' : `${Math.round(deep)}%`}</span>
+                                              </div>
+                                              <div>
+                                                <span className="block text-[9px] uppercase tracking-widest text-white/35">Awake</span>
+                                                <span className="mt-1 block text-lg text-white/90">{interruptions === null ? '—' : interruptions}</span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
                                   <div className="flex justify-between items-center mb-4">
                                     <div className="flex flex-col">
                                       <span className="text-[9px] text-white/50 uppercase tracking-wide">Текущее</span>
@@ -1564,7 +1672,7 @@ export default function RitualDashboard({
 
                                     if (historyValues.length < 2) {
                                       return (
-                                        <div className="bg-white/[0.01] border border-white/[0.03] rounded-2xl p-4 mb-4">
+                                        <div className="border-y border-white/[0.06] py-4 mb-4">
                                           <p className="text-[11px] text-white/45 leading-relaxed">
                                             Недостаточно дневных точек для графика. Данные появятся после нескольких синхронизаций HealthKit / Health Connect или кольца.
                                           </p>
@@ -1591,7 +1699,7 @@ export default function RitualDashboard({
                                     });
 
                                     return (
-                                      <div className="bg-white/[0.01] border border-white/[0.03] rounded-2xl p-4 mb-4 flex flex-col items-center">
+                                      <div className="border-y border-white/[0.06] py-4 mb-4 flex flex-col items-center">
                                         <div className="w-full h-40 relative">
                                           <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${width} ${height}`}>
                                             {/* Horizontal grid/reference lines */}
@@ -1785,10 +1893,38 @@ export default function RitualDashboard({
                       initial={{ opacity: 0, y: 10 }} 
                       animate={{ opacity: 1, y: 0 }} 
                       exit={{ opacity: 0, y: -10 }} 
-                      className="flex flex-col gap-6 px-1"
+                      className="relative -mx-5 -mt-4 min-h-[calc(100vh-160px)] overflow-hidden px-6 py-8"
                     >
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-[440px] opacity-70 [mask-image:linear-gradient(to_bottom,transparent,black_14%,black_70%,transparent)]">
+                        <div className="absolute left-1/2 top-6 h-72 w-72 -translate-x-1/2 rounded-full bg-[#E6B85C]/15 blur-3xl" />
+                        <div className="absolute -left-24 top-24 h-56 w-56 rounded-full bg-[#9fb7ff]/10 blur-3xl" />
+                        <div className="absolute -right-24 top-40 h-56 w-56 rounded-full bg-[#ff5a3d]/10 blur-3xl" />
+                      </div>
+                      <div className="relative min-h-[330px] overflow-hidden pb-8 pt-6">
+                        <div className="pointer-events-none absolute inset-x-8 top-12 h-40 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(230,184,92,0.18),transparent_68%)] blur-2xl" />
+                        <div className="relative z-10">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <span className="text-[10px] uppercase tracking-[0.28em] text-white/38">Trends</span>
+                              <div className="mt-3 flex items-end gap-2">
+                                <span className="text-6xl font-light leading-none text-[#E6B85C]">
+                                  {currentSelectedDay.shineScore === null ? '—' : currentSelectedDay.shineScore}
+                                </span>
+                                <span className="mb-2 text-sm text-white/45">{currentSelectedDay.shineScore === null ? '' : '%'}</span>
+                              </div>
+                            </div>
+                            <span className="rounded-full bg-white/[0.035] px-3 py-1.5 text-[10px] text-white/58 backdrop-blur-md">
+                              {analyticsPeriod === '7' ? '7 days' : `${analyticsPeriod} days`}
+                            </span>
+                          </div>
+                          <p className="mt-4 max-w-[280px] text-[13px] leading-relaxed text-white/64">
+                            Золотая линия показывает Сияние, тонкие бары — ритуалы. Нажатие на день меняет сводку ниже.
+                          </p>
+                        </div>
+                      </div>
+
                       {/* Period selector - minimal inline tabs with active underline */}
-                      <div className="flex justify-center gap-8 py-2 border-b border-white/[0.03]">
+                      <div className="mx-auto mb-7 flex justify-center gap-6 border-b border-white/[0.08]">
                         {(['7', '30', '90'] as const).map((key) => (
                           <button 
                             key={key} 
@@ -1796,16 +1932,13 @@ export default function RitualDashboard({
                               setAnalyticsPeriod(key);
                               setSelectedTrendDay(null); // reset selected index when switching periods
                             }} 
-                            className={`text-[10px] font-mono tracking-widest uppercase transition-all relative pb-2.5 ${
+                            className={`min-w-16 border-b py-3 text-[10px] font-mono tracking-widest uppercase transition-all relative ${
                               analyticsPeriod === key 
-                                ? 'text-[#E6B85C] font-bold' 
-                                : 'text-white/40 hover:text-white/75'
+                                ? 'border-[#E6B85C] text-[#E6B85C] font-bold' 
+                                : 'border-transparent text-white/40 hover:text-white/75'
                             }`}
                           >
                             {key === '7' ? 'Неделя' : key === '30' ? '30 дней' : '90 дней'}
-                            {analyticsPeriod === key && (
-                              <span className="absolute bottom-[-1px] left-0 right-0 h-[1.5px] bg-[#E6B85C]" />
-                            )}
                           </button>
                         ))}
                       </div>
@@ -1837,7 +1970,7 @@ export default function RitualDashboard({
                         {/* Interactive SVG Chart */}
                         <div className="w-full relative py-2">
                           {!hasEnoughTrendData && (
-                            <div className="absolute inset-x-4 top-8 z-10 rounded-2xl border border-white/[0.05] bg-[#070709]/85 p-4 text-center">
+                            <div className="absolute inset-x-4 top-8 z-10 border-y border-white/[0.06] py-4 text-center backdrop-blur-md">
                               <p className="text-[11px] text-white/55 leading-relaxed">
                                 Недостаточно реальных дневных health-данных для линии тренда. Подключите HealthKit / Health Connect или синхронизируйте кольцо несколько дней подряд.
                               </p>

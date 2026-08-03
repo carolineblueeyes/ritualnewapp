@@ -8,6 +8,9 @@ import {
 import ActivityMap from './ActivityMap';
 import { geolocationService, GeoPoint } from '../services/geolocation';
 import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged } from '../services/supabase/auth';
+import RitualTickPicker from './ui/ritual-tick-picker';
+import RitualArcGauge from './ui/ritual-arc-gauge';
+import RitualHeatMapField from './ui/ritual-heat-map-field';
 
 interface ActivityToolProps {
   onClose: () => void;
@@ -51,8 +54,9 @@ const typeLabels: Record<ActivityType, string> = {
 export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToolProps) {
   const [mode, setMode] = useState<'free' | 'target'>('free');
   const [selectedType, setSelectedType] = useState<ActivityType>('run');
-  const [targetType, setTargetType] = useState<'distance' | 'duration' | 'calories'>('duration');
+  const [targetType, setTargetType] = useState<'distance' | 'duration' | 'calories' | 'heartZone'>('duration');
   const [targetValue, setTargetValue] = useState(30);
+  const [intensity, setIntensity] = useState<'easy' | 'steady' | 'hard'>('steady');
 
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -281,7 +285,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#060608] text-white flex flex-col justify-between p-5 select-none overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-[#060608] text-white flex flex-col justify-between p-5 select-none overflow-hidden ritual-nebula" style={{ '--nebula-color': '#ff5a3d' } as React.CSSProperties}>
       
       {/* Inline styles for ripple effects */}
       <style>{`
@@ -316,7 +320,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
         <div
           className="absolute inset-0 z-0 pointer-events-none transition-all duration-1000 opacity-20"
           style={{
-            backgroundImage: `radial-gradient(circle at 50% 30%, ${color}1b, transparent 65%)`,
+            backgroundImage: 'radial-gradient(circle at 50% 30%, rgba(255,90,61,0.22), transparent 65%)',
           }}
         />
       )}
@@ -327,16 +331,16 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
           <div className="relative flex items-center justify-center">
             {/* Waves during expansion */}
             {mapRevealState === 'revealing' && (
-              <div className="absolute w-20 h-20 rounded-full border-2 border-[#34d399]/70 animate-[reveal-ripple_2.5s_cubic-bezier(0.1,0.8,0.2,1)_infinite]" />
+              <div className="absolute w-20 h-20 rounded-full border-2 border-[#ff5a3d]/70 animate-[reveal-ripple_2.5s_cubic-bezier(0.1,0.8,0.2,1)_infinite]" />
             )}
             
             {/* Gentle resting pulse before starting */}
             {mapRevealState === 'hidden' && (
-              <div className="absolute w-12 h-12 bg-[#34d399]/15 rounded-full animate-ping" />
+              <div className="absolute w-12 h-12 bg-[#ff5a3d]/15 rounded-full animate-ping" />
             )}
             
             {/* Central core dot */}
-            <div className="w-5 h-5 bg-[#34d399] rounded-full border-[3px] border-white shadow-[0_0_20px_#34d399] z-40" />
+            <div className="w-5 h-5 bg-[#ff5a3d] rounded-full border-[3px] border-white shadow-[0_0_22px_#ff5a3d] z-40" />
           </div>
         </div>
       )}
@@ -372,19 +376,19 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
               </div>
             ) : (
               <>
-                <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-1.5 flex gap-1 mt-6 backdrop-blur-md">
+                <div className="border-b border-white/[0.08] flex gap-8 mt-8">
                   <button
                     onClick={() => setMode('free')}
-                    className={`flex-1 h-11 rounded-xl text-xs font-mono uppercase tracking-wider font-semibold transition-all ${
-                      mode === 'free' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
+                    className={`flex-1 h-11 border-b text-xs font-mono uppercase tracking-wider font-semibold transition-all ${
+                      mode === 'free' ? 'border-[#ffb020] text-white' : 'border-transparent text-white/40 hover:text-white/60'
                     }`}
                   >
                     Свободная
                   </button>
                   <button
                     onClick={() => setMode('target')}
-                    className={`flex-1 h-11 rounded-xl text-xs font-mono uppercase tracking-wider font-semibold transition-all ${
-                      mode === 'target' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
+                    className={`flex-1 h-11 border-b text-xs font-mono uppercase tracking-wider font-semibold transition-all ${
+                      mode === 'target' ? 'border-[#ffb020] text-white' : 'border-transparent text-white/40 hover:text-white/60'
                     }`}
                   >
                     По цели
@@ -392,49 +396,55 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                 </div>
 
                 {mode === 'target' && (
-                  <div className="flex flex-col items-center text-center gap-4 py-6 bg-[#121216]/65 border border-white/10 rounded-3xl p-6 mt-4 backdrop-blur-md shadow-2xl">
-                    <div className="flex gap-2">
-                      {(['duration', 'distance', 'calories'] as const).map((t) => (
+                  <div className="mt-5 flex flex-col gap-4">
+                    <div className="flex gap-4 overflow-x-auto hide-scrollbar">
+                      {(['duration', 'distance', 'calories', 'heartZone'] as const).map((t) => (
                         <button
                           key={t}
                           onClick={() => {
                             setTargetType(t);
-                            setTargetValue(t === 'duration' ? 30 : t === 'distance' ? 5 : 300);
+                            setTargetValue(t === 'duration' ? 30 : t === 'distance' ? 5 : t === 'calories' ? 300 : 3);
                           }}
-                          className={`py-1.5 px-3.5 rounded-full text-xs font-mono uppercase tracking-wider border transition-all ${
-                            targetType === t
-                              ? 'bg-[#34d399]/10 border-[#34d399]/40 text-[#34d399]'
-                              : 'bg-white/5 border-white/5 text-white/60'
+                          className={`flex-none border-b pb-2 text-xs font-mono uppercase tracking-wider transition-all ${
+                            targetType === t ? 'border-[#ff5a3d]/80 text-[#ffb020]' : 'border-white/[0.08] text-white/50'
                           }`}
                         >
-                          {t === 'duration' ? 'Время' : t === 'distance' ? 'Км' : 'Ккал'}
+                          {t === 'duration' ? 'Время' : t === 'distance' ? 'Км' : t === 'calories' ? 'Ккал' : 'Пульс'}
                         </button>
                       ))}
                     </div>
-                    <div className="flex flex-col items-center gap-3 mt-2 w-full">
-                      <span className="text-4xl font-normal font-mono text-white">
-                        {targetValue}
-                        <span className="text-sm text-white/40 ml-1">
-                          {targetType === 'duration' ? 'мин' : targetType === 'distance' ? 'км' : 'ккал'}
-                        </span>
-                      </span>
-                      <div className="grid grid-cols-3 gap-2 w-full max-w-xs mt-2">
-                        {(targetType === 'duration'
-                          ? [15, 30, 45, 60, 90, 120]
+                    <RitualTickPicker
+                      label={targetType === 'duration' ? 'duration' : targetType === 'distance' ? 'distance' : targetType === 'calories' ? 'calories' : 'heart zone'}
+                      value={targetValue}
+                      values={
+                        targetType === 'duration'
+                          ? [15, 20, 30, 45, 60, 75, 90, 120]
                           : targetType === 'distance'
-                            ? [1, 3, 5, 10, 21, 42]
-                            : [100, 200, 300, 500, 750, 1000]
-                        ).map((presetVal) => (
+                            ? [1, 3, 5, 7, 10, 15, 21, 42]
+                            : targetType === 'calories'
+                              ? [100, 200, 300, 400, 500, 750, 1000]
+                              : [1, 2, 3, 4, 5]
+                      }
+                      unit={targetType === 'duration' ? 'min' : targetType === 'distance' ? 'km' : targetType === 'calories' ? 'kcal' : 'zone'}
+                      color="#ff5a3d"
+                      onChange={setTargetValue}
+                    />
+                    <div className="border-y border-white/[0.07] py-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/40">intensity</span>
+                        <span className="text-[10px] font-mono text-[#ffb020]">{intensity}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-5">
+                        {(['easy', 'steady', 'hard'] as const).map((item) => (
                           <button
-                            key={presetVal}
-                            onClick={() => setTargetValue(presetVal)}
-                            className={`py-2.5 px-1 rounded-xl text-xs font-mono font-medium border transition-all ${
-                              targetValue === presetVal
-                                ? 'bg-[#34d399]/10 border-[#34d399]/40 text-[#34d399] font-bold shadow'
-                                : 'bg-white/5 border-white/5 text-white/60 hover:border-white/10'
+                            key={item}
+                            type="button"
+                            onClick={() => setIntensity(item)}
+                            className={`border-b pb-2 text-xs capitalize transition-all ${
+                              intensity === item ? 'border-[#ffb020] text-white' : 'border-white/[0.08] text-white/45'
                             }`}
                           >
-                            {presetVal} {targetType === 'duration' ? 'мин' : targetType === 'distance' ? 'км' : 'ккал'}
+                            {item}
                           </button>
                         ))}
                       </div>
@@ -445,7 +455,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                 {/* Spacer/Visual placeholder instead of duplicate map box */}
                 <div className="flex-1 min-h-[14vh]" />
 
-                <div className="flex flex-col gap-3.5 mb-6 bg-[#121216]/50 border border-white/5 rounded-3xl p-4 backdrop-blur-md">
+                <div className="flex flex-col gap-3.5 mb-6 border-y border-white/[0.07] py-4">
                   <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase px-1">ТИП ТРЕНИРОВКИ</span>
                   <div className="flex gap-2.5 overflow-x-auto hide-scrollbar pb-1 px-1">
                     {(['run', 'walk', 'bike', 'swim', 'dance', 'yoga', 'gym'] as ActivityType[]).map((type) => {
@@ -454,10 +464,10 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                         <button
                           key={type}
                           onClick={() => setSelectedType(type)}
-                          className={`flex-none px-4 py-3 rounded-2xl border text-xs font-medium transition-all ${
+                          className={`flex-none px-1 py-3 border-b text-xs font-medium transition-all ${
                             isSelected
-                              ? 'bg-[#34d399]/20 border-[#34d399]/40 text-white shadow-md'
-                              : 'bg-[#121212]/40 border-white/5 text-white/60 hover:border-white/10'
+                              ? 'border-[#ff5a3d]/70 text-white'
+                              : 'border-white/[0.08] text-white/60 hover:border-white/16'
                           }`}
                         >
                           {typeLabels[type]}
@@ -470,7 +480,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                 <div className="pb-6 w-full">
                   <button
                     onClick={startTracking}
-                    className="w-full h-14 rounded-2xl bg-gradient-to-br from-[#34d399] to-[#059669] text-black font-semibold hover:opacity-95 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#34d399]/25"
+                    className="w-full h-14 rounded-full bg-gradient-to-br from-[#ffb020] to-[#ff5a3d] text-black font-semibold hover:opacity-95 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#ff5a3d]/25"
                   >
                     <Play className="w-5 h-5 fill-current" />
                     <span>Начать</span>
@@ -487,12 +497,12 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
             exit={{ opacity: 0 }}
             className="flex-1 flex flex-col justify-between z-10 max-w-md mx-auto w-full pt-3"
           >
-            <div className="flex justify-between items-center bg-[#121216]/50 border border-white/5 py-2 px-4 rounded-full backdrop-blur-md">
+            <div className="flex justify-between items-center border-b border-white/[0.08] py-3">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
                 <span className="text-[10px] font-mono text-white/70 tracking-wider uppercase">ИДЕТ ЗАПИСЬ</span>
               </div>
-              <span className="text-xs font-mono bg-white/10 py-0.5 px-3 rounded-full border border-white/10 text-white font-semibold">
+              <span className="text-xs font-mono text-white font-semibold">
                 {typeLabels[selectedType]}
               </span>
             </div>
@@ -501,7 +511,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
             <div className="flex-1 min-h-[12vh]" />
 
             <div className="grid grid-cols-2 gap-3 mt-3">
-              <div className="p-4 rounded-2xl bg-[#121216]/75 border border-white/10 flex flex-col gap-0.5 backdrop-blur-md shadow-lg">
+              <div className="border-b border-white/[0.08] py-4 flex flex-col gap-0.5">
                 <div className="flex items-center gap-1.5 text-white/40">
                   <Heart className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
                   <span className="text-[9px] font-mono tracking-wider uppercase">Пульс</span>
@@ -510,7 +520,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                   {heartRate} <span className="text-[10px] text-white/40 font-sans">уд/мин</span>
                 </span>
               </div>
-              <div className="p-4 rounded-2xl bg-[#121216]/75 border border-white/10 flex flex-col gap-0.5 backdrop-blur-md shadow-lg">
+              <div className="border-b border-white/[0.08] py-4 flex flex-col gap-0.5">
                 <div className="flex items-center gap-1.5 text-white/40">
                   <Clock className="w-3.5 h-3.5 text-blue-400" />
                   <span className="text-[9px] font-mono tracking-wider uppercase">Время</span>
@@ -522,7 +532,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
             </div>
 
             <div className="grid grid-cols-2 gap-3 mt-3 mb-4">
-              <div className="p-4 rounded-2xl bg-[#121216]/75 border border-white/10 flex flex-col gap-0.5 backdrop-blur-md shadow-lg">
+              <div className="border-b border-white/[0.08] py-4 flex flex-col gap-0.5">
                 <div className="flex items-center gap-1.5 text-white/40">
                   <Navigation className="w-3.5 h-3.5 text-emerald-400" />
                   <span className="text-[9px] font-mono tracking-wider uppercase">Дистанция</span>
@@ -531,7 +541,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                   {distance.toFixed(2)} <span className="text-[10px] text-white/40 font-sans">км</span>
                 </span>
               </div>
-              <div className="p-4 rounded-2xl bg-[#121216]/75 border border-white/10 flex flex-col gap-0.5 backdrop-blur-md shadow-lg">
+              <div className="border-b border-white/[0.08] py-4 flex flex-col gap-0.5">
                 <div className="flex items-center gap-1.5 text-white/40">
                   <Flame className="w-3.5 h-3.5 text-amber-400" />
                   <span className="text-[9px] font-mono tracking-wider uppercase">Калории</span>
@@ -545,14 +555,14 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
             <div className="flex items-center gap-3.5 pb-6">
               <button
                 onClick={() => setIsPaused(!isPaused)}
-                className="flex-1 h-14 rounded-2xl bg-[#121216]/85 border border-white/10 hover:bg-white/10 active:scale-95 transition-all text-white flex items-center justify-center gap-2 font-semibold backdrop-blur-md shadow-xl"
+                className="flex-1 h-14 rounded-full bg-white/[0.045] hover:bg-white/[0.08] active:scale-95 transition-all text-white flex items-center justify-center gap-2 font-semibold backdrop-blur-md"
               >
-                {isPaused ? <Play className="w-5 h-5 text-[#34d399]" /> : <Pause className="w-5 h-5 text-white" />}
+                {isPaused ? <Play className="w-5 h-5 text-[#ffb020]" /> : <Pause className="w-5 h-5 text-white" />}
                 <span>{isPaused ? 'Продолжить' : 'Пауза'}</span>
               </button>
               <button
                 onClick={stopTracking}
-                className="px-6 h-14 rounded-2xl bg-[#ef4444] text-white hover:bg-[#dc2626] active:scale-95 transition-all flex items-center justify-center gap-2 font-semibold shadow-xl shadow-rose-500/10"
+                className="px-6 h-14 rounded-full bg-[#ef4444] text-white hover:bg-[#dc2626] active:scale-95 transition-all flex items-center justify-center gap-2 font-semibold shadow-xl shadow-rose-500/10"
               >
                 <StopCircle className="w-5 h-5" />
                 <span>Стоп</span>
@@ -615,10 +625,44 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
               <h1 className="text-xl font-bold text-white/95 leading-snug">
                 {getActivityTitle()}
               </h1>
+
+              <div className="relative -mx-5 overflow-hidden ritual-flow px-5 py-7" style={{ '--flow-color': '#ff5a3d' } as React.CSSProperties}>
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,90,61,0.26),transparent_36%),radial-gradient(circle_at_80%_80%,rgba(255,176,32,0.18),transparent_42%)]" />
+                <div className="relative z-10">
+                  <span className="text-[10px] font-mono uppercase tracking-[0.28em] text-[#ffb020]/80">Today movement</span>
+                  <div className="mt-4 flex items-end gap-2">
+                    <span className="text-6xl font-light leading-none text-white">{stepsCount.toLocaleString('ru-RU')}</span>
+                  </div>
+                  <p className="mt-2 text-lg font-semibold text-white/45">Steps walked</p>
+                  <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[12px] text-white/68">
+                    <span><strong className="font-semibold text-[#ffb020]">{finalDistance.toFixed(2)} км</strong> covered</span>
+                    <span><strong className="font-semibold text-[#ff5a3d]">{finalCalories} ккал</strong> burned</span>
+                    <span><strong className="font-semibold text-white">{formatTime(finalTime)}</strong> active</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="py-3">
+                <RitualArcGauge
+                  value={Math.min(100, Math.round((finalCalories / Math.max(250, targetType === 'calories' ? targetValue : 500)) * 100))}
+                  label="load"
+                  color="#ff5a3d"
+                  size={236}
+                />
+              </div>
+
+              <RitualHeatMapField
+                title="Recovery"
+                xLabel="Load"
+                yLabel="Stability"
+                primaryColor="#22d3ee"
+                secondaryColor="#2563eb"
+                accentColor="#ff5a3d"
+              />
               
               {/* Highlight Achievement badge */}
-              <div className="flex items-center gap-3 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/15 rounded-2xl p-4 mt-1.5">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-black font-bold text-xs shadow-lg shadow-amber-500/10 flex-shrink-0 font-mono">
+              <div className="flex items-center gap-3 border-y border-[#ff5a3d]/20 py-4 mt-1.5">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ffb020] to-[#ff5a3d] flex items-center justify-center text-black font-bold text-xs shadow-lg shadow-[#ff5a3d]/10 flex-shrink-0 font-mono">
                   PR
                 </div>
                 <div>
@@ -631,7 +675,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
             </div>
 
             {/* Strava Primary Metrics Grid */}
-            <div className="grid grid-cols-2 gap-4 bg-white/[0.01] border border-white/[0.04] rounded-2xl p-4 flex-shrink-0">
+            <div className="grid grid-cols-2 gap-4 border-y border-white/[0.07] py-5 flex-shrink-0">
               <div className="flex flex-col gap-0.5">
                 <span className="text-[9px] font-mono uppercase tracking-wider text-white/40">Расстояние</span>
                 <span className="text-2xl font-bold text-white/95 font-mono">
@@ -675,14 +719,14 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
             {/* Interactive Route Map */}
             <div className="flex flex-col gap-2 flex-shrink-0">
               <span className="text-[10px] font-mono uppercase tracking-widest text-white/40 px-1">МАРШРУТ ТРЕНИРОВКИ</span>
-              <div className="h-48 rounded-2xl border border-white/5 overflow-hidden relative shadow-lg">
+              <div className="h-48 border-y border-white/[0.07] overflow-hidden relative shadow-lg">
                 <ActivityMap
                   center={summaryRoute[0]}
                   route={summaryRoute}
                   followUser={false}
                   height="100%"
                 />
-                <div className="absolute top-3 left-3 bg-[#121216]/85 border border-white/10 px-2.5 py-1 rounded-full text-[9px] font-mono tracking-wider uppercase text-[#fc5200] z-20 shadow backdrop-blur-sm">
+                <div className="absolute top-3 left-3 bg-[#121216]/65 px-2.5 py-1 rounded-full text-[9px] font-mono tracking-wider uppercase text-[#fc5200] z-20 shadow backdrop-blur-sm">
                   ИНТЕРАКТИВНЫЙ МАРШРУТ
                 </div>
               </div>
@@ -694,7 +738,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
               
               <div className="flex flex-col gap-2.5">
                 {/* Heart Rate Metric */}
-                <div className="bg-white/[0.01] border border-white/[0.04] rounded-2xl p-4 flex items-center justify-between">
+                <div className="border-b border-white/[0.07] py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/15 flex items-center justify-center text-rose-400">
                       <Heart className="w-4.5 h-4.5 animate-pulse" />
@@ -711,7 +755,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                 </div>
 
                 {/* HRV Metric */}
-                <div className="bg-white/[0.01] border border-white/[0.04] rounded-2xl p-4 flex items-center justify-between">
+                <div className="border-b border-white/[0.07] py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/15 flex items-center justify-center text-purple-400">
                       <Activity className="w-4.5 h-4.5" />
@@ -728,7 +772,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                 </div>
 
                 {/* Caloric balance */}
-                <div className="bg-white/[0.01] border border-white/[0.04] rounded-2xl p-4 flex items-center justify-between">
+                <div className="border-b border-white/[0.07] py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/15 flex items-center justify-center text-amber-400">
                       <Flame className="w-4.5 h-4.5" />
@@ -745,7 +789,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                 </div>
 
                 {/* Oxygenation */}
-                <div className="bg-white/[0.01] border border-white/[0.04] rounded-2xl p-4 flex items-center justify-between">
+                <div className="border-b border-white/[0.07] py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/15 flex items-center justify-center text-blue-400">
                       <TrendingUp className="w-4.5 h-4.5" />
@@ -770,7 +814,7 @@ export default function ActivityTool({ onClose, color = '#34d399' }: ActivityToo
                   setShowSummary(false);
                   onClose();
                 }}
-                className="w-full h-14 rounded-2xl bg-[#fc5200] text-white font-semibold hover:bg-[#fc5200]/95 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#fc5200]/20"
+                className="w-full h-14 rounded-full bg-[#fc5200] text-white font-semibold hover:bg-[#fc5200]/95 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#fc5200]/20"
               >
                 <span>Завершить и сохранить</span>
                 <Check className="w-5 h-5" />
