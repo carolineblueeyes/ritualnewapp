@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Activity, Mic, User, BookOpen } from 'lucide-react';
+import { Sun, Activity, Mic, User, BookOpen, Share2, Search } from 'lucide-react';
 import { Practice, UserStats, ActiveTab } from './types';
 import RitualDashboard from './components/RitualDashboard';
 import PracticesList from './components/PracticesList';
@@ -232,6 +232,8 @@ export default function App() {
   const practiceCompletionHandledRef = useRef(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  const [healthOverlayOpen, setHealthOverlayOpen] = useState(false);
+  const [practicesSearchOpen, setPracticesSearchOpen] = useState(false);
   const [voiceReply, setVoiceReply] = useState('Привет! Как ты себя чувствуешь? Скажи мне, например: "я устал", "хочу спать" или "нужен фокус".');
   const [isListening, setIsListening] = useState(false);
 
@@ -592,16 +594,36 @@ export default function App() {
     }
   };
 
+  const handleShare = async () => {
+    const message = shine.total > 0
+      ? `Моё Сияние сегодня — ${shine.total}%. Ritual помогает понимать состояние и управлять им.`
+      : 'Ritual — внимание к себе и практики для состояния.';
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ title: 'Ritual', text: message });
+        return;
+      } catch {
+        // user cancelled
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(message);
+    } catch {
+      // clipboard unavailable
+    }
+  };
+
   return (
-    <div className="ritual-bentoless relative min-h-screen bg-black text-white flex flex-col justify-between overflow-x-hidden font-sans">
+    <div className="ritual-bentoless relative min-h-screen bg-[#08090A] text-[#F2EFE8] flex flex-col justify-between overflow-x-hidden font-sans">
       
-      {/* Subtle background */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-black" />
+      {/* Continuous canvas */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[#08090A]" />
 
       {!selectedPractice && (
         <>
           {/* Top header */}
-          <header className="relative z-10 w-full max-w-md mx-auto pt-[calc(env(safe-area-inset-top)+1.5rem)] px-6 flex justify-between items-center">
+          {!healthOverlayOpen && (
+          <header className="absolute top-0 left-1/2 -translate-x-1/2 z-20 w-full max-w-md mx-auto px-6 flex justify-between items-center pt-[calc(env(safe-area-inset-top)+1.25rem)]">
             <button 
               aria-label="Открыть профиль"
               onClick={() => switchTab('profile')}
@@ -609,27 +631,47 @@ export default function App() {
             >
               <User className="w-4 h-4 text-white/40" strokeWidth={2} />
             </button>
-            <button 
-              aria-label="Открыть подписку"
-              onClick={() => setShowSubscription(true)}
-              className={`text-[11px] font-medium tracking-wide transition-colors ${
-                isSubscribed ? 'text-white/60 hover:text-white/80' : 'text-amber-400 hover:text-amber-300'
-              }`}
-            >
-              {isSubscribed ? 'Plus' : 'Lite →'}
-            </button>
+            {activeTab === 'today' || activeTab === 'progress' ? (
+              <button
+                aria-label="Поделиться"
+                onClick={() => void handleShare()}
+                className="w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.1] transition-colors duration-[160ms] ease-out active:scale-[0.97]"
+              >
+                <Share2 className="w-4 h-4 text-white/50" strokeWidth={2} />
+              </button>
+            ) : activeTab === 'practices' ? (
+              <button
+                aria-label="Поиск практик"
+                onClick={() => setPracticesSearchOpen(v => !v)}
+                className="w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.1] transition-colors duration-[160ms] ease-out active:scale-[0.97]"
+              >
+                <Search className="w-4 h-4 text-white/50" strokeWidth={2} />
+              </button>
+            ) : (
+              <button
+                aria-label="Открыть подписку"
+                onClick={() => setShowSubscription(true)}
+                className={`text-[11px] font-medium tracking-wide transition-colors duration-[160ms] ease-out ${
+                  isSubscribed ? 'text-white/60 hover:text-white/80' : 'text-amber-400 hover:text-amber-300'
+                }`}
+              >
+                {isSubscribed ? 'Plus' : 'Lite →'}
+              </button>
+            )}
           </header>
+          )}
 
-          {/* Main content */}
-          <main className="relative flex-1 w-full max-w-md mx-auto px-5 pt-4 pb-24">
-            <AnimatePresence mode="wait">
+          <main className={`relative z-10 flex-1 w-full max-w-md mx-auto px-5 pb-24 ${
+            activeTab === 'today' ? 'pt-0' : 'pt-[calc(env(safe-area-inset-top)+3.75rem)]'
+          }`}>
+            <AnimatePresence initial={false}>
               {activeTab === 'today' && (
                 <motion.div
                   key="today"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
+                  transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <RitualDashboard 
                     practices={practices}
@@ -641,6 +683,7 @@ export default function App() {
                     historyByMetric={historyByMetric}
                     availabilityByMetric={availabilityByMetric}
                     onRefreshHealth={refreshHealth}
+                    onHealthOpenChange={setHealthOverlayOpen}
                   />
                 </motion.div>
               )}
@@ -650,14 +693,16 @@ export default function App() {
                   key="practices"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
+                  transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <PracticesList 
                     practices={practices}
                     onSelectPractice={handleSelectPractice}
                     onSelectTool={(toolId) => setActiveTool(toolId)}
                     onOpenInsights={() => setShowInsights(true)}
+                    searchOpen={practicesSearchOpen}
+                    onSearchClose={() => setPracticesSearchOpen(false)}
                   />
                 </motion.div>
               )}
@@ -667,8 +712,8 @@ export default function App() {
                   key="progress"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
+                  transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <StatsPanel 
                     stats={stats}
@@ -683,8 +728,8 @@ export default function App() {
                   key="profile"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
+                  transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <Profile 
                     isSubscribed={isSubscribed}
@@ -704,6 +749,7 @@ export default function App() {
           </main>
 
           {/* Bottom navigation */}
+          {!healthOverlayOpen && (
           <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] left-1/2 -translate-x-1/2 w-full max-w-[340px] px-4 z-[15] flex items-center gap-2">
             {/* Main nav pill */}
             <nav className="flex items-center h-[52px] flex-1 px-2 bg-[#111114]/90 backdrop-blur-xl rounded-full border border-white/[0.06]">
@@ -747,6 +793,7 @@ export default function App() {
               <Mic className="w-[18px] h-[18px]" strokeWidth={2.5} />
             </button>
           </div>
+          )}
         </>
       )}
 

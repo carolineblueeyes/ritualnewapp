@@ -842,7 +842,7 @@ export default function PracticePlayer({
   }, []);
 
   const handleShare = useCallback(async () => {
-    const text = `✨ Практика "${practice.title}" завершена в Ritual. ${breathCount > 0 ? `${breathCount} циклов дыхания.` : ''}`;
+    const text = `Практика "${practice.title}" завершена в Ritual. ${breathCount > 0 ? `${breathCount} циклов дыхания.` : ''}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'Ritual', text });

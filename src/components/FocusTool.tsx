@@ -272,7 +272,7 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
 
   const shareResults = () => {
     triggerHaptic('medium');
-    const text = `🧘 Мой фокус в Ritual:\nЗадача: ${taskName || 'Глубокий фокус'}\nВремя работы: ${Math.round(totalWorkSeconds / 60)} мин\nЧистая концентрация: ${calculatePurePercent(totalWorkSeconds, distractionsCount, cheated)}%\nОтвлечений: ${distractionsCount}`;
+    const text = `Мой фокус в Ritual:\nЗадача: ${taskName || 'Глубокий фокус'}\nВремя работы: ${Math.round(totalWorkSeconds / 60)} мин\nЧистая концентрация: ${calculatePurePercent(totalWorkSeconds, distractionsCount, cheated)}%\nОтвлечений: ${distractionsCount}`;
     if (navigator.share) {
       navigator.share({ title: 'Ritual Focus', text }).catch(() => {});
     } else {
@@ -554,7 +554,7 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
                     onClick={handleDistraction}
                     className="py-2 px-6 rounded-full bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 text-rose-300 text-xs font-mono uppercase tracking-wider active:scale-95 transition-all"
                   >
-                    ⚠️ Я отвлёкся
+                    Я отвлёкся
                   </button>
                   <span className="text-[10px] font-mono text-white/50 uppercase">
                     Зафиксировано отвлечений: <span className="font-semibold text-rose-300">{distractionsCount}</span>
@@ -570,7 +570,7 @@ export default function FocusTool({ onClose, color = '#60a5fa', onAddMinutes }: 
                     onClick={skipBreak}
                     className="py-2 px-6 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 text-white text-xs font-mono uppercase tracking-wider active:scale-95 transition-all"
                   >
-                    Пропустить отдых ➔
+                    Пропустить отдых
                   </button>
                 </div>
               )}

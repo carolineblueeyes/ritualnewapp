@@ -8,16 +8,6 @@ interface QuickStartCardProps {
   onClick: () => void;
 }
 
-const emojiMap: Record<string, string> = {
-  'start-day': '☀️',
-  'important-moment': '🎤',
-  'calm-down': '😰',
-  'pause': '⏸️',
-  'focus': '🧠',
-  'restore': '😴',
-  'end-day': '🌙'
-};
-
 const cardBg: Record<string, { img: string; gradient: string }> = {
   'start-day': {
     img: 'https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?q=80&w=600&auto=format&fit=crop',
@@ -82,7 +72,10 @@ export default function QuickStartCard({ practice, onClick }: QuickStartCardProp
         {isCompleted ? (
           <Check className="w-4 h-4 text-white/50" strokeWidth={2} />
         ) : (
-          <span>{emojiMap[practice.id] || '✨'}</span>
+          <span
+            className="w-2.5 h-2.5 rounded-full"
+            style={{ backgroundColor: practice.color, boxShadow: `0 0 8px ${practice.color}66` }}
+          />
         )}
       </div>
 

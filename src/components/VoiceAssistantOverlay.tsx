@@ -37,10 +37,10 @@ export default function VoiceAssistantOverlay({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex h-[100dvh] flex-col justify-end overflow-hidden bg-[#070709]/98 p-6 backdrop-blur-2xl"
+      className="fixed inset-0 z-50 flex h-[100dvh] flex-col justify-end overflow-hidden bg-[#08090A]/95 p-6 backdrop-blur-2xl"
     >
       <div className="absolute left-6 right-6 top-6 flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-[0.2em] text-white/60">Ассистент</span>
+        <span className="text-[13px] text-[#F2EFE8]/42">Rail</span>
         <button
           onClick={onClose}
           className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.04] transition-all hover:bg-white/[0.08] active:scale-95"
@@ -76,7 +76,7 @@ export default function VoiceAssistantOverlay({
             key={reply}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-3xl border border-white/[0.06] bg-white/[0.03] p-5 text-sm leading-relaxed text-white/80"
+            className="rounded-3xl border border-white/10 bg-white/[0.06] backdrop-blur-xl p-5 text-[15px] leading-relaxed text-[#F2EFE8]/80"
           >
             <p>{reply}</p>
           </motion.div>

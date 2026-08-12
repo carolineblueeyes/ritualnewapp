@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Play, Pause, ChevronLeft, Volume2, HelpCircle, Plus, Trash } from 'lucide-react';
+import { X, Play, Pause, ChevronLeft, Volume2, HelpCircle, Plus, Trash, Check } from 'lucide-react';
 import { scheduleSessionComplete } from '../services/notifications';
 import { audioEngine } from '../services/audioEngine';
 
@@ -664,7 +664,7 @@ export default function BreathingTool({ onClose, color = '#ffd585', onAddMinutes
                   transition={{ duration: 2, repeat: Infinity }}
                   className="text-2xl text-amber-300"
                 >
-                  ✨
+                  <Check className="w-8 h-8 text-amber-300" strokeWidth={1.5} />
                 </motion.div>
               </div>
               <h2 className="text-2xl font-light text-white tracking-wide">Ты восстановил ритм</h2>
