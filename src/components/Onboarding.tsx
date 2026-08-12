@@ -1,16 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Brain, Mic, Compass, Award, ArrowRight, Apple, Chrome, User, Smartphone, Activity, ShoppingBag, Mail, Loader2, Shield, Bluetooth } from 'lucide-react';
+import {
+  Sparkles,
+  Apple,
+  Smartphone,
+  ArrowRight,
+  Activity,
+  ShoppingBag,
+  Loader2,
+  Bluetooth,
+  BookOpen,
+} from 'lucide-react';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
 import { clearHealthCache } from '../services/health/manager';
 import ConnectHealthModal from './ConnectHealthModal';
 import RingConnectionWizard from './RingConnectionWizard';
+import PracticeCrystal from './PracticeCrystal';
+import SilkShaderBackground from './SilkShaderBackground';
+import ThoughtSequence from './onboarding/ThoughtSequence';
+import FlashWordsField from './onboarding/FlashWordsField';
 import {
   getCurrentAuthSession,
-  signInWithEmail,
   signInWithProvider,
-  signUpWithEmail,
 } from '../services/supabase/auth';
 import { ensureAnonymousSession } from '../services/supabase/client';
 
@@ -19,20 +31,103 @@ interface OnboardingProps {
   onRefreshHealth?: () => void | Promise<void>;
 }
 
+const TOTAL_STEPS = 8;
+
+const ATTENTION_THOUGHTS = [
+  'То, чему уделяешь внимание, становится твоим состоянием.',
+  'Состояние определяет решения.',
+  'Решения формируют качество жизни.',
+  'Ritual помогает понимать своё состояние и управлять им.',
+];
+
+const RAIL_THOUGHTS = [
+  'Привет. Я Rail.',
+  'Я создан, чтобы помочь тебе лучше понимать себя.',
+  'Я анализирую сигналы организма, замечаю закономерности в твоём состоянии и предлагаю ритуалы, которые нужны именно сейчас.',
+  'Скажи: «Мне тревожно» — я предложу практику.',
+  'Скажи: «Нет сил» — помогу разобраться почему.',
+  'Или поставь цель — больше спать, больше энергии, восстановление или хорошая форма.',
+  'Я помогу построить путь и буду сопровождать тебя каждый день.',
+];
+
+const SHINE_THOUGHTS = [
+  'Сияние отражает твоё состояние.',
+  'Один показатель помогает понять, как чувствует себя организм прямо сейчас.',
+];
+
+const PRACTICES_THOUGHTS = [
+  'Ритуалы помогают управлять состоянием.',
+  'Дыхательные, телесные и ментальные практики, которые помогают восстановиться, сфокусироваться или расслабиться.',
+];
+
+const CRYSTAL_THOUGHTS = [
+  'Кристалл отражает твой путь.',
+  'Он развивается.',
+  'Становится чище от практик и сияет от твоего состояния.',
+];
+
+function StepProgress({ step }: { step: number }) {
+  if (step <= 0 || step >= TOTAL_STEPS) return null;
+  const label = String(step).padStart(2, '0');
+  const total = String(TOTAL_STEPS - 1).padStart(2, '0');
+  return (
+    <span className="absolute top-[max(1.25rem,env(safe-area-inset-top))] right-6 z-20 text-[11px] tracking-[0.2em] text-white/35 tabular-nums">
+      {label} / {total}
+    </span>
+  );
+}
+
+function PrimaryButton({
+  children,
+  onClick,
+  disabled,
+  className = '',
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full h-14 rounded-2xl bg-[#F2EFE8] text-[#08090A] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:active:scale-100 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TextButton({ children, onClick, disabled }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="text-center text-xs tracking-[0.18em] text-white/40 hover:text-white/60 uppercase disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingProps) {
   const [step, setStep] = useState(0);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [authInfo, setAuthInfo] = useState('');
   const [isHealthSyncing, setIsHealthSyncing] = useState(false);
   const [healthSyncProgress, setHealthSyncProgress] = useState(0);
   const [healthSyncStep, setHealthSyncStep] = useState('');
   const [showRingWizard, setShowRingWizard] = useState(false);
   const [showHealthInfoModal, setShowHealthInfoModal] = useState(false);
-  const [age, setAge] = useState('');
+  const [flashDone, setFlashDone] = useState(false);
+  const [attentionThoughtsDone, setAttentionThoughtsDone] = useState(false);
+  const [railThoughtsDone, setRailThoughtsDone] = useState(false);
+  const [shineThoughtsDone, setShineThoughtsDone] = useState(false);
+  const [practicesThoughtsDone, setPracticesThoughtsDone] = useState(false);
+  const [crystalThoughtsDone, setCrystalThoughtsDone] = useState(false);
   const [privacyConsent, setPrivacyConsent] = useState(false);
 
   const healthPlatform = healthService.getPlatform();
@@ -42,12 +137,8 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
     : healthPlatform === 'android'
       ? 'Health Connect'
       : 'Мобильное приложение';
-  const healthConnectLabel = healthPlatform === 'ios'
-    ? 'Подключить Apple Health'
-    : healthPlatform === 'android'
-      ? 'Подключить Health Connect'
-      : 'Подключение в мобильном приложении';
-  const showAppleSignIn = healthPlatform === 'ios';
+  const showAppleSignIn = healthPlatform === 'ios' || healthPlatform === 'web';
+  const showAndroidSignIn = healthPlatform === 'android' || healthPlatform === 'web';
 
   useEffect(() => {
     if (step !== 0) return;
@@ -57,52 +148,31 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
 
   useEffect(() => {
     getCurrentAuthSession()
-      .then(session => {
+      .then((session) => {
         if (session && !session.user.is_anonymous) setStep(2);
       })
       .catch(() => {});
   }, []);
 
-  const handleAuthSuccess = () => {
+  useEffect(() => {
+    if (step === 2) {
+      setFlashDone(false);
+      setAttentionThoughtsDone(false);
+    }
+    if (step === 3) setRailThoughtsDone(false);
+    if (step === 4) setShineThoughtsDone(false);
+    if (step === 5) setPracticesThoughtsDone(false);
+    if (step === 6) setCrystalThoughtsDone(false);
+  }, [step]);
+
+  const handleAuthSuccess = useCallback(() => {
     setAuthError('');
-    setAuthInfo('');
     setStep(2);
-  };
-
-  const handleEmailAuth = async () => {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail || password.length < 6) {
-      setAuthError('Введите email и пароль минимум 6 символов.');
-      return;
-    }
-
-    setAuthLoading(true);
-    setAuthError('');
-    setAuthInfo('');
-
-    try {
-      const result = authMode === 'signin'
-        ? await signInWithEmail(trimmedEmail, password)
-        : await signUpWithEmail(trimmedEmail, password);
-
-      if (result.session) {
-        handleAuthSuccess();
-        return;
-      }
-
-      setAuthInfo('Аккаунт создан. Проверьте email и подтвердите вход.');
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Не удалось войти.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
+  }, []);
 
   const handleProviderAuth = async (provider: 'apple' | 'google') => {
     setAuthLoading(true);
     setAuthError('');
-    setAuthInfo('');
-
     try {
       await signInWithProvider(provider);
     } catch (error) {
@@ -114,13 +184,11 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
   const handleGuestAuth = async () => {
     setAuthLoading(true);
     setAuthError('');
-    setAuthInfo('');
-
     try {
       await ensureAnonymousSession();
       handleAuthSuccess();
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Не удалось продолжить как гость.');
+      setAuthError(error instanceof Error ? error.message : 'Не удалось продолжить.');
     } finally {
       setAuthLoading(false);
     }
@@ -142,20 +210,9 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
     });
 
     if (result.ok) {
-      window.setTimeout(() => {
-        onRefreshHealth?.();
-      }, 1200);
-      window.setTimeout(() => {
-        onRefreshHealth?.();
-      }, 3500);
-      setStep(5);
+      window.setTimeout(() => onRefreshHealth?.(), 1200);
+      window.setTimeout(() => onRefreshHealth?.(), 3500);
     }
-  };
-
-  const saveGender = (gender: 'male' | 'female' | 'unspecified') => {
-    localStorage.setItem('ritual_user_gender', gender);
-    localStorage.setItem('ritual_user_age', age);
-    setStep(3);
   };
 
   const completeOnboarding = () => {
@@ -164,389 +221,459 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
     onComplete();
   };
 
+  const advance = (next: number) => () => setStep(next);
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#08080a] text-white flex flex-col justify-between overflow-hidden select-none">
-      <div className="absolute inset-0 z-0 pointer-events-none opacity-40">
-        <img
-          src="https://lh3.googleusercontent.com/aida-public/AB6AXuAQK0QprKpBH_G_LRor3NkyGFydwOQr7OIb3gTOGBd8e9fTUEFHmQ3aNbcOceDmnQsjDVlR8X3fXvc-1pF-9W32ykmqpkKscw6WQRU-heixwuZws89Qim-Fej8dextes2I0FYrZ86pd_GZhPL8uNk5LTSnUmByOYGSqMNOWLiog8TsZKwfU3I-mwforEQjaw4BaxrXlWtrAi5ZZXd9rav5tZufCOH9-03AMr08tYIjHuMSmpfsjlZyExZmx2LYTZH6E8_vU7jctcYM"
-          alt="Atmospheric Background"
-          className="w-full h-full object-cover filter blur-[2px]"
-          referrerPolicy="no-referrer"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#08080a] via-transparent to-[#08080a]" />
-      </div>
+    <div className="fixed inset-0 z-50 ritual-flow text-[#F2EFE8] flex flex-col overflow-hidden select-none">
+      <StepProgress step={step} />
 
       <AnimatePresence mode="wait">
         {step === 0 && (
           <motion.div
             key="splash"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.05 }}
-            transition={{ duration: 0.6 }}
-            className="flex-1 flex flex-col items-center justify-center z-10"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.02 }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-1 flex flex-col items-center justify-center z-10 px-6"
           >
-            <div className="w-24 h-24 rounded-full bg-white/[0.02] border border-white/10 flex items-center justify-center relative shadow-2xl">
-              <div className="absolute inset-0 rounded-full bg-amber-400/20 blur-xl animate-pulse" />
-              <span className="text-4xl font-semibold tracking-widest text-amber-300 font-display">R</span>
-            </div>
-            <h1 className="text-2xl font-normal font-display tracking-[0.3em] text-white mt-6">RITUAL</h1>
-            <span className="text-[10px] font-mono tracking-widest text-white/60 uppercase mt-2">внимание к себе</span>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col items-center"
+            >
+              <div className="w-[88px] h-[88px] rounded-full border border-white/10 flex items-center justify-center relative">
+                <div className="absolute inset-[-20%] rounded-full bg-[#C59A55]/15 blur-2xl" />
+                <span className="text-[42px] font-display text-[#F2EFE8] leading-none">R</span>
+              </div>
+              <h1 className="mt-8 text-[28px] font-display tracking-[0.35em] text-[#F2EFE8]">RITUAL</h1>
+            </motion.div>
           </motion.div>
         )}
 
         {step === 1 && (
           <motion.div
             key="signin"
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full overflow-y-auto hide-scrollbar"
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
           >
-            <div className="flex flex-col items-center justify-center text-center gap-4 pt-8">
-              <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/10 flex items-center justify-center">
-                <Sparkles className="w-8 h-8 text-amber-300" />
-              </div>
-              <h2 className="text-2xl md:text-3xl font-normal font-display tracking-tight text-white leading-snug">
-                Внимание к себе начинается здесь.<br />
-                <span className="text-amber-200">Спокойно и без лишнего шума.</span>
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
+              <h2 className="text-[34px] leading-[1.08] font-display text-[#F2EFE8] text-balance">
+                Внимание к себе — это прекрасно.
               </h2>
-              <p className="text-sm text-white/40 max-w-[280px]">
-                Войдите или продолжите как гость, чтобы собрать личный ритм практик и отслеживать состояние.
+              <p className="mt-5 text-[17px] leading-relaxed text-white/55 max-w-[300px]">
+                Всё начинается здесь.
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 pb-8 pt-8">
+            <div className="flex flex-col gap-3 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
               {showAppleSignIn && (
                 <button
-                  onClick={() => handleProviderAuth('apple')}
+                  onClick={() => void handleProviderAuth('apple')}
                   disabled={authLoading}
-                  className="w-full h-14 rounded-2xl bg-white text-black font-semibold hover:bg-white/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:active:scale-100"
+                  className="w-full h-14 rounded-2xl bg-[#F2EFE8] text-[#08090A] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-60"
                 >
-                  <Apple className="w-5 h-5 fill-current" />
-                  <span>Войти через Apple</span>
+                  {authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Apple className="w-5 h-5 fill-current" />}
+                  <span>Продолжить с Apple</span>
                 </button>
               )}
-              <button
-                onClick={() => handleProviderAuth('google')}
-                disabled={authLoading}
-                className="w-full h-14 rounded-2xl bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:active:scale-100"
-              >
-                <Chrome className="w-5 h-5" />
-                <span>Войти через Google</span>
-              </button>
-
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3 flex flex-col gap-3">
-                <div className="grid grid-cols-2 rounded-xl bg-black/20 p-1 text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => { setAuthMode('signin'); setAuthError(''); setAuthInfo(''); }}
-                    className={`h-9 rounded-lg transition-all ${authMode === 'signin' ? 'bg-white text-black' : 'text-white/50 hover:text-white'}`}
-                  >
-                    Вход
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthInfo(''); }}
-                    className={`h-9 rounded-lg transition-all ${authMode === 'signup' ? 'bg-white text-black' : 'text-white/50 hover:text-white'}`}
-                  >
-                    Регистрация
-                  </button>
-                </div>
-
-                <label className="flex items-center gap-2 h-12 rounded-xl bg-black/20 border border-white/10 px-3 focus-within:border-amber-300/40 transition-colors">
-                  <Mail className="w-4 h-4 text-white/35 flex-shrink-0" />
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    inputMode="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="email"
-                    className="w-full bg-transparent outline-none text-sm text-white placeholder:text-white/25"
-                  />
-                </label>
-
-                <label className="flex items-center gap-2 h-12 rounded-xl bg-black/20 border border-white/10 px-3 focus-within:border-amber-300/40 transition-colors">
-                  <Shield className="w-4 h-4 text-white/35 flex-shrink-0" />
-                  <input
-                    type="password"
-                    autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="пароль"
-                    className="w-full bg-transparent outline-none text-sm text-white placeholder:text-white/25"
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') void handleEmailAuth();
-                    }}
-                  />
-                </label>
-
-                {authError && <p className="text-xs text-red-300/90 leading-relaxed">{authError}</p>}
-                {authInfo && <p className="text-xs text-amber-200/90 leading-relaxed">{authInfo}</p>}
-
+              {showAndroidSignIn && (
                 <button
-                  type="button"
-                  onClick={() => void handleEmailAuth()}
+                  onClick={() => void handleProviderAuth('google')}
                   disabled={authLoading}
-                  className="w-full h-12 rounded-xl bg-amber-300 text-black font-semibold hover:bg-amber-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:active:scale-100"
+                  className="w-full h-14 rounded-2xl bg-white/[0.06] border border-white/12 text-[#F2EFE8] font-semibold hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-60"
                 >
-                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                  <span>{authMode === 'signin' ? 'Войти по email' : 'Создать аккаунт'}</span>
+                  <Smartphone className="w-5 h-5" />
+                  <span>Продолжить с Android</span>
                 </button>
-              </div>
-
-              <button
-                onClick={() => void handleGuestAuth()}
-                disabled={authLoading}
-                className="text-center text-xs font-mono tracking-widest text-white/40 hover:text-white/60 mt-3 uppercase"
-              >
-                продолжить как гость
-              </button>
+              )}
+              {authError && <p className="text-xs text-[#C56855] text-center leading-relaxed">{authError}</p>}
+              <TextButton onClick={() => void handleGuestAuth()} disabled={authLoading}>
+                продолжить без входа
+              </TextButton>
             </div>
           </motion.div>
         )}
 
         {step === 2 && (
           <motion.div
-            key="gender-question"
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
+            key="attention"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.45 }}
+            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full overflow-y-auto hide-scrollbar"
           >
-            <div className="flex-1 flex flex-col items-center justify-center text-center gap-5">
-              <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/10 flex items-center justify-center">
-                <User className="w-8 h-8 text-amber-300" />
-              </div>
-              <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">персонализация</span>
-              <h2 className="text-2xl md:text-3xl font-normal font-display tracking-tight text-white leading-snug">
-                Укажите ваш пол<br />
-                <span className="text-amber-200">для точной биометрии</span>
-              </h2>
-              <p className="text-xs text-white/40 max-w-[280px]">
-                Это помогает корректнее считать Индекс Сияния и фильтровать показатели здоровья в аналитике.
-              </p>
+            <div className="flex-1 flex flex-col justify-center pt-8">
+              <FlashWordsField
+                words={['Скроллинг.', 'Чужие цели.', 'Новости.', 'Давление.']}
+                onComplete={() => setFlashDone(true)}
+              />
 
-              <label className="w-full max-w-[280px] text-left"><span className="text-[10px] uppercase tracking-wider text-white/40">Возраст</span><input value={age} onChange={event => setAge(event.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="Например, 35" className="mt-2 w-full h-12 rounded-2xl bg-white/5 border border-white/10 px-4 text-sm text-white outline-none focus:border-amber-300/30" /><span className="text-[9px] text-white/30 mt-1 block">Нужен только для стартовой персональной нормы. Допустимый возраст: 18–100.</span></label>
-
-              <div className="flex flex-col gap-3.5 w-full max-w-[280px] mt-4">
-                <button
-                  onClick={() => saveGender('male')}
-                  disabled={Number(age) < 18 || Number(age) > 100}
-                  className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98]"
-                >
-                  Мужчина
-                </button>
-                <button
-                  onClick={() => saveGender('female')}
-                  disabled={Number(age) < 18 || Number(age) > 100}
-                  className="w-full h-13 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-300/30 hover:bg-white/10 text-white font-semibold text-sm transition-all active:scale-[0.98]"
-                >
-                  Женщина
-                </button>
-                <button
-                  onClick={() => saveGender('unspecified')}
-                  disabled={Number(age) < 18 || Number(age) > 100}
-                  className="w-full h-11 rounded-2xl border border-transparent text-white/50 hover:text-white/80 font-medium text-xs tracking-wider uppercase font-mono transition-all active:scale-[0.98]"
-                >
-                  Не указывать
-                </button>
+              <div className="mt-10 min-h-[180px]">
+                {flashDone && (
+                  <ThoughtSequence
+                    thoughts={ATTENTION_THOUGHTS}
+                    pauseMs={2200}
+                    thoughtClassName="text-[22px] leading-[1.35] font-display text-[#F2EFE8] text-center px-2"
+                    onComplete={() => setAttentionThoughtsDone(true)}
+                  />
+                )}
               </div>
             </div>
 
-            <div className="pb-4 text-center">
-              <span className="text-[9px] font-mono text-white/60 uppercase tracking-widest">
-                Вы сможете изменить это в профиле в любой момент
-              </span>
+            <div className="pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <PrimaryButton onClick={advance(3)} disabled={!attentionThoughtsDone}>
+                <span>Продолжить</span>
+                <ArrowRight className="w-5 h-5" />
+              </PrimaryButton>
             </div>
           </motion.div>
         )}
 
         {step === 3 && (
           <motion.div
-            key="features"
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full overflow-y-auto hide-scrollbar"
+            key="rail"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.45 }}
+            className="flex-1 flex flex-col z-10 max-w-md mx-auto w-full"
           >
-            <div className="pt-6">
-              <h2 className="text-xl font-normal text-center text-white leading-relaxed px-4 mb-2">
-                Ritual помогает возвращать контроль над вниманием.
-              </h2>
-              <p className="text-xs font-mono text-center tracking-widest text-white/40 uppercase mb-8">
-                практики, голос и биометрия в одном ритме
-              </p>
-
-              <div className="grid grid-cols-1 gap-3.5 mb-6">
-                {[
-                  { icon: Brain, title: 'Сияние', text: 'Ritual считывает состояние тела, чтобы предложить практику, которая нужна именно сейчас.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-                  { icon: Mic, title: 'Голос', text: 'Расскажите, что чувствуете, и Ritual подберет практику под ваш запрос.', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-                  { icon: Compass, title: 'Практики', text: 'Аудио, дыхание, тело и фокус. Сессии от 2 до 20 минут.', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-                  { icon: Award, title: 'Кристалл', text: 'Прогресс обретает форму и отражает ваш путь через практики.', color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
-                ].map(({ icon: Icon, title, text, color, bg, border }) => (
-                  <div key={title} className="p-4 rounded-3xl bg-white/[0.02] border border-white/5 flex gap-4 items-start">
-                    <div className={`w-10 h-10 rounded-2xl ${bg} border ${border} flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                      <Icon className={`w-5 h-5 ${color}`} />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-white">{title}</h3>
-                      <p className="text-xs text-white/50 mt-1 leading-relaxed">{text}</p>
-                    </div>
-                  </div>
-                ))}
+            <div className="flex items-center justify-between px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
+                  <Sparkles className="h-4 w-4 text-[#C59A55]" />
+                </div>
+                <span className="text-sm font-medium text-[#F2EFE8]">Rail</span>
               </div>
             </div>
 
-            <div className="flex flex-col gap-4 pb-4">
-              <div className="flex items-center justify-center gap-2 py-2 px-4 rounded-full bg-amber-400/5 border border-amber-400/10 max-w-xs mx-auto">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                <span className="text-[10px] font-mono tracking-widest text-amber-200/80 uppercase">основано на дневных данных</span>
+            <div className="flex flex-1 flex-col items-center justify-center px-6 gap-8">
+              <div className="flex h-14 items-end justify-center gap-1">
+                {Array.from({ length: 9 }).map((_, index) => (
+                  <motion.div
+                    key={index}
+                    animate={{ height: [12, 18 + Math.sin(index * 0.9) * 14, 12] }}
+                    transition={{ duration: 1.8, repeat: Infinity, delay: index * 0.07, ease: 'easeInOut' }}
+                    className="w-[3px] rounded-full bg-[#F2EFE8]/35"
+                  />
+                ))}
               </div>
 
-              <button
-                onClick={() => setStep(4)}
-                className="w-full h-14 rounded-2xl bg-white text-black font-semibold hover:bg-white/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-              >
-                <span>Далее</span>
+              <div className="min-h-[220px] w-full flex items-center justify-center">
+                <ThoughtSequence
+                  thoughts={RAIL_THOUGHTS}
+                  pauseMs={2400}
+                  initialDelay={600}
+                  thoughtClassName="text-[19px] leading-[1.45] font-display text-[#F2EFE8]/90 text-center px-1"
+                  onComplete={() => setRailThoughtsDone(true)}
+                />
+              </div>
+            </div>
+
+            <div className="p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <PrimaryButton onClick={advance(4)} disabled={!railThoughtsDone}>
+                <span>Продолжить</span>
                 <ArrowRight className="w-5 h-5" />
-              </button>
+              </PrimaryButton>
             </div>
           </motion.div>
         )}
 
         {step === 4 && (
           <motion.div
-            key="health-connect"
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
+            key="shine"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex-1 flex flex-col z-10 max-w-md mx-auto w-full"
           >
-            <div className="flex-1 flex flex-col items-center justify-center text-center gap-5">
-              <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/10 flex items-center justify-center">
-                <Activity className="w-8 h-8 text-amber-300" />
+            <div className="relative flex-1 flex flex-col">
+              <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
+                <SilkShaderBackground accentColor="#C59A55" />
+                <div className="absolute inset-0 bg-gradient-to-b from-[#08090A]/20 via-transparent to-[#08090A]" />
               </div>
-              <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">выберите источник данных</span>
-              <h2 className="text-2xl md:text-3xl font-normal font-display tracking-tight text-white leading-snug">
-                Подключите Ritual Ring<br />
-                <span className="text-amber-200">или приложение здоровья</span>
-              </h2>
-              <p className="text-xs text-white/40 max-w-[280px]">
-                Ritual Ring работает самостоятельно и передаёт все доступные показатели напрямую. Health Connect — дополнительный источник, подключать его необязательно.
-              </p>
 
-              <div className="flex flex-col gap-3 w-full max-w-[300px] mt-4">
-                {healthService.getPlatform() === 'android' && (
-                  <button
-                    onClick={() => setShowRingWizard(true)}
-                    disabled={isHealthSyncing}
-                    className="w-full h-14 rounded-2xl bg-emerald-200 text-[#07100d] hover:bg-emerald-100 disabled:opacity-60 font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3 shadow-lg shadow-emerald-300/10"
+              <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-6 pt-10">
+                <span className="text-[11px] tracking-[0.22em] text-white/70 uppercase mb-6">Сегодня</span>
+
+                <div className="relative">
+                  <motion.div
+                    animate={{ scale: [1, 1.08, 1], opacity: [0.35, 0.55, 0.35] }}
+                    transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                    className="absolute inset-[-40%] rounded-full bg-[#C59A55]/25 blur-3xl"
+                  />
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+                    className="relative text-[112px] leading-[0.85] font-display text-[#F2EFE8] tabular-nums"
                   >
-                    <Bluetooth className="w-5 h-5" />
-                    <span>Подключить Ritual Ring</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => connectSource(healthSourceType)}
-                  disabled={isHealthSyncing}
-                  className="w-full h-13 rounded-2xl bg-white text-black hover:bg-white/90 disabled:opacity-60 disabled:active:scale-100 font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
-                >
-                  {healthSourceType === 'healthkit'
-                    ? <Apple className="w-5 h-5 fill-current" />
-                    : <Smartphone className="w-5 h-5" />}
-                  <span>{isHealthSyncing ? 'Подключение...' : healthConnectLabel}</span>
-                </button>
-                {healthPlatform === 'android' && (
-                  <p className="-mt-1 text-[10px] text-white/35">
-                    Необязательно, если вы используете Ritual Ring
-                  </p>
-                )}
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-left">
-                  <p className="text-[10px] font-mono uppercase tracking-widest text-white/35">{healthSourceLabel}</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-white/45">
-                    Вы сами выбираете, какие метрики разрешить. Отказ не заблокирует приложение.
-                  </p>
+                    82
+                  </motion.span>
                 </div>
-                <button
-                  onClick={() => window.open('https://ritual.store', '_blank')}
-                  className="w-full h-13 rounded-2xl bg-[#e8e0d4]/[0.08] border border-[#e8e0d4]/[0.15] hover:bg-[#e8e0d4]/[0.12] text-[#e8e0d4]/80 font-semibold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-3"
-                >
-                  <ShoppingBag className="w-5 h-5" />
-                  <span>Купить кольцо Ritual</span>
-                </button>
-                <button
-                  onClick={() => setStep(5)}
-                  disabled={isHealthSyncing}
-                  className="text-center text-xs font-mono tracking-widest text-white/40 hover:text-white/60 mt-3 uppercase"
-                >
-                  пропустить
-                </button>
+
+                <div className="mt-12 min-h-[100px] w-full max-w-[320px]">
+                  <ThoughtSequence
+                    thoughts={SHINE_THOUGHTS}
+                    pauseMs={2600}
+                    initialDelay={900}
+                    thoughtClassName="text-[20px] leading-[1.4] font-display text-[#F2EFE8]/85 text-center"
+                    onComplete={() => setShineThoughtsDone(true)}
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="pb-4 text-center">
-              <span className="text-[9px] font-mono text-white/60 uppercase tracking-widest">
-                Вы сможете подключить это в профиле в любой момент
-              </span>
+            <div className="relative z-10 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <PrimaryButton onClick={advance(5)} disabled={!shineThoughtsDone}>
+                <span>Продолжить</span>
+                <ArrowRight className="w-5 h-5" />
+              </PrimaryButton>
             </div>
           </motion.div>
         )}
 
         {step === 5 && (
           <motion.div
-            key="onboarding-final"
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
+            key="practices"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex-1 flex flex-col z-10 max-w-md mx-auto w-full overflow-hidden"
           >
-            <div className="flex-1 flex flex-col items-center justify-center text-center gap-6">
-              <div className="w-20 h-20 rounded-full bg-[#161616]/40 border border-amber-300/20 flex items-center justify-center shadow-2xl relative">
-                <div className="absolute inset-0 rounded-full bg-amber-400/10 blur-xl animate-pulse" />
-                <Sparkles className="w-10 h-10 text-amber-300" />
+            <div className="px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4">
+              <div className="flex items-center gap-2 mb-6">
+                <BookOpen className="w-4 h-4 text-white/50" />
+                <span className="text-sm text-white/70">Библиотека практик</span>
               </div>
-              <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">первый шаг</span>
-              <h2 className="text-3xl font-normal font-display tracking-tight text-white leading-tight">
-                Путь внимания
-              </h2>
-              <p className="text-sm text-white/60 max-w-[320px] leading-relaxed">
-                Ваше пространство практик готово. Начните с короткого ритуала, а данные здоровья можно подключить сейчас или позже.
-              </p>
+
+              <div className="grid grid-cols-2 gap-2 opacity-80 pointer-events-none">
+                {['Исток', 'Тишина', 'Энергия', 'Ясность'].map((name, i) => (
+                  <div
+                    key={name}
+                    className="h-24 rounded-xl border border-white/8 bg-white/[0.03] p-3 flex flex-col justify-end"
+                    style={{ opacity: 1 - i * 0.12 }}
+                  >
+                    <span className="text-sm font-medium text-[#F2EFE8]/80">{name}</span>
+                    <span className="text-[10px] text-white/40 mt-0.5">практики</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="pb-8">
-              <label className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4 mb-3 text-left"><input type="checkbox" checked={privacyConsent} onChange={event => setPrivacyConsent(event.target.checked)} className="mt-0.5 accent-amber-300" /><span className="text-[10px] text-white/50 leading-relaxed">Я разрешаю Ritual обрабатывать дневные агрегаты здоровья для расчёта Сияния и персональных рекомендаций. Сырые сенсорные измерения не отправляются в облако.</span></label>
-              <button
-                onClick={completeOnboarding}
-                disabled={!privacyConsent}
-                className="w-full h-14 rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-black font-semibold hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/15 disabled:opacity-35"
-              >
-                <span>Начать путь</span>
+            <div className="flex-1 flex items-center px-6">
+              <ThoughtSequence
+                thoughts={PRACTICES_THOUGHTS}
+                pauseMs={2600}
+                initialDelay={500}
+                thoughtClassName="text-[20px] leading-[1.4] font-display text-[#F2EFE8] text-center"
+                onComplete={() => setPracticesThoughtsDone(true)}
+              />
+            </div>
+
+            <div className="p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <PrimaryButton onClick={advance(6)} disabled={!practicesThoughtsDone}>
+                <span>Продолжить</span>
                 <ArrowRight className="w-5 h-5" />
-              </button>
+              </PrimaryButton>
             </div>
           </motion.div>
         )}
 
-        {step === 4 && healthSyncStep && (
-          <div className="absolute left-6 right-6 bottom-20 z-20 mx-auto max-w-[300px] rounded-2xl border border-white/[0.05] bg-[#121215]/95 p-3 text-left shadow-2xl">
-            <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-white/60 uppercase tracking-wider">
-              <span>{healthSyncStep}</span>
-              <span>{Math.round(healthSyncProgress)}%</span>
+        {step === 6 && (
+          <motion.div
+            key="crystal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex-1 flex flex-col justify-between z-10 max-w-md mx-auto w-full p-6"
+          >
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <PracticeCrystal
+                facets={12}
+                color="#C59A55"
+                fogPercent={35}
+                glowIntensity={0.7}
+                rotationSpeed={18}
+                hasBeam
+                hasSparks
+                isPulsing
+              />
+
+              <div className="mt-10 min-h-[120px] w-full">
+                <ThoughtSequence
+                  thoughts={CRYSTAL_THOUGHTS}
+                  pauseMs={2200}
+                  initialDelay={700}
+                  thoughtClassName="text-[20px] leading-[1.4] font-display text-[#F2EFE8] text-center"
+                  onComplete={() => setCrystalThoughtsDone(true)}
+                />
+              </div>
             </div>
-            {isHealthSyncing && (
-              <div className="mt-2 h-1 rounded-full bg-white/[0.05] overflow-hidden">
-                <div className="h-full bg-amber-300/70 transition-all" style={{ width: `${healthSyncProgress}%` }} />
+
+            <div className="pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <PrimaryButton onClick={advance(7)} disabled={!crystalThoughtsDone}>
+                <span>Продолжить</span>
+                <ArrowRight className="w-5 h-5" />
+              </PrimaryButton>
+            </div>
+          </motion.div>
+        )}
+
+        {step === 7 && (
+          <motion.div
+            key="health"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
+          >
+            <div className="flex-1 flex flex-col justify-center gap-8">
+              <h2 className="text-[28px] leading-[1.15] font-display text-[#F2EFE8] text-center text-balance">
+                Чтобы понимать тебя точнее, подключи источник данных
+              </h2>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (healthPlatform === 'android') {
+                      setShowRingWizard(true);
+                      return;
+                    }
+                    window.open('https://ritual.store', '_blank');
+                  }}
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left hover:bg-white/[0.07] active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#74B6A0]/15 flex items-center justify-center flex-shrink-0">
+                      <Bluetooth className="w-5 h-5 text-[#74B6A0]" />
+                    </div>
+                    <div>
+                      <p className="text-[15px] font-semibold text-[#F2EFE8]">Ritual Core</p>
+                      <p className="text-[13px] text-white/45 mt-1 leading-relaxed">Умное кольцо</p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void connectSource(healthSourceType)}
+                  disabled={isHealthSyncing}
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left hover:bg-white/[0.07] active:scale-[0.99] transition-all disabled:opacity-50"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex items-center justify-center flex-shrink-0">
+                      {healthSourceType === 'healthkit'
+                        ? <Apple className="w-5 h-5 fill-[#F2EFE8]" />
+                        : <Activity className="w-5 h-5 text-[#F2EFE8]" />}
+                    </div>
+                    <div>
+                      <p className="text-[15px] font-semibold text-[#F2EFE8]">{healthSourceLabel}</p>
+                      <p className="text-[13px] text-white/45 mt-1 leading-relaxed">Быстрый старт</p>
+                    </div>
+                  </div>
+                </button>
+
+                {healthPlatform !== 'android' && (
+                  <button
+                    type="button"
+                    onClick={() => window.open('https://ritual.store', '_blank')}
+                    className="w-full h-12 rounded-2xl border border-white/8 text-[13px] text-white/50 hover:text-white/70 flex items-center justify-center gap-2"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>Узнать о Ritual Core</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <PrimaryButton onClick={advance(8)} disabled={isHealthSyncing}>
+                <span>Продолжить</span>
+                <ArrowRight className="w-5 h-5" />
+              </PrimaryButton>
+              <TextButton onClick={advance(8)} disabled={isHealthSyncing}>
+                пропустить
+              </TextButton>
+            </div>
+
+            {healthSyncStep && (
+              <div className="absolute left-6 right-6 bottom-28 mx-auto max-w-[300px] rounded-2xl border border-white/8 bg-[#101113]/95 p-3 text-left">
+                <div className="flex items-center justify-between gap-3 text-[10px] text-white/55 uppercase tracking-wider">
+                  <span>{healthSyncStep}</span>
+                  <span>{Math.round(healthSyncProgress)}%</span>
+                </div>
+                {isHealthSyncing && (
+                  <div className="mt-2 h-1 rounded-full bg-white/8 overflow-hidden">
+                    <div className="h-full bg-[#C59A55]/70 transition-all" style={{ width: `${healthSyncProgress}%` }} />
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </motion.div>
+        )}
+
+        {step === 8 && (
+          <motion.div
+            key="final"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
+          >
+            <div className="flex-1 flex flex-col items-center justify-center text-center gap-8">
+              <div className="relative w-28 h-28 flex items-center justify-center">
+                <motion.div
+                  animate={{ scale: [1, 1.25, 1], opacity: [0.4, 0.75, 0.4] }}
+                  transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+                  className="absolute inset-0 rounded-full bg-[#C59A55]/30 blur-2xl"
+                />
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <Sparkles className="w-14 h-14 text-[#C59A55]" strokeWidth={1.5} />
+                </motion.div>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-[32px] leading-[1.1] font-display text-[#F2EFE8]">
+                  Действие меняет жизнь
+                </p>
+                <p className="text-[17px] text-white/55 leading-relaxed">
+                  Путь начинается сегодня.
+                </p>
+              </div>
+            </div>
+
+            <div className="pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <label className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4 mb-4 text-left">
+                <input
+                  type="checkbox"
+                  checked={privacyConsent}
+                  onChange={(event) => setPrivacyConsent(event.target.checked)}
+                  className="mt-0.5 accent-[#C59A55]"
+                />
+                <span className="text-[11px] text-white/50 leading-relaxed">
+                  Я разрешаю Ritual обрабатывать дневные агрегаты здоровья для расчёта Сияния и персональных рекомендаций.
+                </span>
+              </label>
+              <PrimaryButton onClick={completeOnboarding} disabled={!privacyConsent}>
+                <span>Начать</span>
+                <ArrowRight className="w-5 h-5" />
+              </PrimaryButton>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -555,9 +682,8 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
         isOpen={showRingWizard}
         onClose={() => setShowRingWizard(false)}
         onConnected={() => {
-          setStep(5);
           clearHealthCache();
-          void Promise.resolve(onRefreshHealth?.()).catch(error => {
+          void Promise.resolve(onRefreshHealth?.()).catch((error) => {
             console.warn('[Onboarding] Ritual Ring refresh failed:', error);
           });
         }}

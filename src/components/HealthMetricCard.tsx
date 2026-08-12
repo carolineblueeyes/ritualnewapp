@@ -1,10 +1,10 @@
 import React from 'react';
-import { motion } from 'motion/react';
 import {
   Activity, Moon, Zap, Heart, Eye, Thermometer, Wind,
   Lock, ShoppingBag, Smartphone
 } from 'lucide-react';
 import { DataSource } from '../services/health/manager';
+import GlassSurface from './ui/GlassSurface';
 
 interface HealthMetricCardProps {
   metricKey: string;
@@ -20,7 +20,7 @@ interface HealthMetricCardProps {
   onBuyRing?: () => void;
 }
 
-const ICONS: Record<string, React.ComponentType<any>> = {
+const ICONS: Record<string, React.ComponentType<{ className?: string; strokeWidth?: number }>> = {
   activity: Activity,
   moon: Moon,
   zap: Zap,
@@ -40,13 +40,13 @@ const METRIC_ICONS: Record<string, string> = {
   respiratoryRate: 'wind',
 };
 
-function MiniChart({ data, color = '#e8e0d4' }: { data: number[]; color?: string }) {
+function MiniChart({ data, color = '#74B6A0' }: { data: number[]; color?: string }) {
   if (!data || data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
-  const h = 32;
-  const w = 60;
+  const h = 36;
+  const w = 72;
 
   const points = data.map((v, i) => {
     const x = (i / (data.length - 1)) * w;
@@ -55,15 +55,8 @@ function MiniChart({ data, color = '#e8e0d4' }: { data: number[]; color?: string
   }).join(' ');
 
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="opacity-40">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="opacity-50">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -73,62 +66,56 @@ export default function HealthMetricCard({
   label,
   value,
   unit,
-  source,
   trend,
   baseline,
   data,
-  color = '#e8e0d4',
+  color = '#74B6A0',
   onConnect,
   onBuyRing,
 }: HealthMetricCardProps) {
   const iconName = METRIC_ICONS[metricKey] || 'activity';
   const Icon = ICONS[iconName] || Activity;
-
   const hasData = value !== null && value !== undefined;
 
   if (!hasData) {
     return (
-      <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0e]/90 overflow-hidden shadow-2xl transition-all hover:border-white/15">
-        <div className="p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/[0.04] flex items-center justify-center border border-white/[0.06]">
-            <Icon className="w-4.5 h-4.5 text-white/40" strokeWidth={1.5} />
+      <GlassSurface className="p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center">
+            <Icon className="w-4 h-4 text-[#F2EFE8]/35" strokeWidth={1.5} />
           </div>
           <div className="flex-1 min-w-0">
-            <span className="text-[11px] font-medium tracking-wide uppercase text-white/40 block">{label}</span>
-            <span className="text-xs font-normal text-white/30">Нет данных</span>
+            <span className="text-[13px] text-[#F2EFE8]/42 block">{label}</span>
+            <span className="text-[13px] text-[#F2EFE8]/30">Нет данных</span>
           </div>
         </div>
-
-        <div className="px-4 pb-4 flex flex-col gap-2">
-          <div className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-            <Lock className="w-3.5 h-3.5 text-white/30 flex-shrink-0" />
-            <span className="text-[10px] text-white/50 leading-relaxed">
-              Подключите приложение здоровья или кольцо
-            </span>
-          </div>
-
-          <div className="flex gap-2">
-            {onConnect && (
-              <button
-                onClick={onConnect}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08] text-[10px] font-medium tracking-wide text-white/70 hover:bg-white/[0.08] active:scale-95 transition-all"
-              >
-                <Smartphone className="w-3 h-3" />
-                Подключить
-              </button>
-            )}
-            {onBuyRing && (
-              <button
-                onClick={onBuyRing}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#d4a853]/[0.08] border border-[#d4a853]/[0.15] text-[10px] font-medium tracking-wide text-[#d4a853] hover:bg-[#d4a853]/[0.12] active:scale-95 transition-all"
-              >
-                <ShoppingBag className="w-3 h-3" />
-                Купить кольцо
-              </button>
-            )}
-          </div>
+        <div className="mt-3 flex items-center gap-2 py-2 px-3 rounded-xl bg-white/[0.03] border border-[rgba(242,239,232,0.08)]">
+          <Lock className="w-3.5 h-3.5 text-[#F2EFE8]/30 flex-shrink-0" />
+          <span className="text-[11px] text-[#F2EFE8]/42">Подключите приложение здоровья или кольцо</span>
         </div>
-      </div>
+        <div className="flex gap-2 mt-3">
+          {onConnect && (
+            <button
+              type="button"
+              onClick={onConnect}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-[11px] font-medium text-[#F2EFE8]/70 active:scale-[0.97] transition-transform duration-[160ms]"
+            >
+              <Smartphone className="w-3 h-3" />
+              Подключить
+            </button>
+          )}
+          {onBuyRing && (
+            <button
+              type="button"
+              onClick={onBuyRing}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#C59A55]/10 border border-[#C59A55]/20 text-[11px] font-medium text-[#C59A55] active:scale-[0.97] transition-transform duration-[160ms]"
+            >
+              <ShoppingBag className="w-3 h-3" />
+              Купить кольцо
+            </button>
+          )}
+        </div>
+      </GlassSurface>
     );
   }
 
@@ -141,43 +128,37 @@ export default function HealthMetricCard({
   const trendUp = trend !== undefined ? trend > 0 : undefined;
 
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0e]/95 overflow-hidden shadow-xl hover:border-white/15 transition-all">
-      <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/[0.04] flex items-center justify-center border border-white/[0.06]">
-            <Icon className="w-4.5 h-4.5 text-white/50" strokeWidth={1.5} />
+    <GlassSurface className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center flex-shrink-0">
+            <Icon className="w-4 h-4 text-[#F2EFE8]/50" strokeWidth={1.5} />
           </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-white/40">{label}</span>
-            <span className="text-base font-semibold tracking-tight text-white mt-0.5">
-              {formattedValue} <span className="text-xs font-normal text-white/40 ml-0.5">{unit}</span>
+          <div className="min-w-0">
+            <span className="text-[13px] text-[#F2EFE8]/42 block">{label}</span>
+            <span className="font-display text-3xl font-light text-[#F2EFE8]/92 tabular-nums leading-none mt-1">
+              {formattedValue}
+              <span className="text-sm font-sans text-[#F2EFE8]/42 ml-1">{unit}</span>
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
           {trendUp !== undefined && (
-            <span className={`text-xs font-bold ${trendUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <span className={`text-xs font-medium ${trendUp ? 'text-[#74B6A0]' : 'text-[#C56855]'}`}>
               {trendUp ? '↑' : '↓'}
             </span>
           )}
-          {data && data.length > 1 && (
-            <MiniChart data={data} color={color} />
-          )}
+          {data && data.length > 1 && <MiniChart data={data} color={color} />}
         </div>
       </div>
-
       {baseline !== undefined && (
-        <div className="px-4 pb-3 border-t border-white/[0.04]">
-          <div className="flex justify-between items-center pt-2.5">
-            <span className="text-[9px] tracking-wide text-white/40 uppercase">Базовая: {baseline} {unit}</span>
-            {hasData && (
-              <span className={`text-[10px] font-medium ${value! > baseline ? 'text-emerald-400/80' : 'text-rose-400/80'}`}>
-                {value! > baseline ? '↑ Выше' : '↓ Ниже'}
-              </span>
-            )}
-          </div>
+        <div className="mt-3 pt-3 border-t border-[rgba(242,239,232,0.08)] flex justify-between items-center">
+          <span className="text-[11px] text-[#F2EFE8]/42">Базовая: {baseline} {unit}</span>
+          <span className={`text-[11px] ${value! > baseline ? 'text-[#74B6A0]/80' : 'text-[#C56855]/80'}`}>
+            {value! > baseline ? '↑ Выше' : '↓ Ниже'}
+          </span>
         </div>
       )}
-    </div>
+    </GlassSurface>
   );
 }

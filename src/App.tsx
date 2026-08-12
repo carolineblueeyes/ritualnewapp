@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Activity, Mic, X, Send, User, BookOpen } from 'lucide-react';
+import { Sun, Activity, Mic, User, BookOpen, Share2, Search } from 'lucide-react';
 import { Practice, UserStats, ActiveTab } from './types';
 import RitualDashboard from './components/RitualDashboard';
 import PracticesList from './components/PracticesList';
@@ -27,6 +27,7 @@ import BreathingTool from './components/BreathingTool';
 import ActivityTool from './components/ActivityTool';
 import FocusTool from './components/FocusTool';
 import AtmosphereTool from './components/AtmosphereTool';
+import VoiceAssistantOverlay from './components/VoiceAssistantOverlay';
 
 import { scheduleSessionComplete } from './services/notifications';
 
@@ -231,7 +232,8 @@ export default function App() {
   const practiceCompletionHandledRef = useRef(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
-  const [voiceQuery, setVoiceQuery] = useState('');
+  const [healthOverlayOpen, setHealthOverlayOpen] = useState(false);
+  const [practicesSearchOpen, setPracticesSearchOpen] = useState(false);
   const [voiceReply, setVoiceReply] = useState('Привет! Как ты себя чувствуешь? Скажи мне, например: "я устал", "хочу спать" или "нужен фокус".');
   const [isListening, setIsListening] = useState(false);
 
@@ -547,12 +549,10 @@ export default function App() {
     });
   };
 
-  const handleVoiceSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!voiceQuery.trim()) return;
+  const handleVoiceQuery = (rawQuery: string) => {
+    if (!rawQuery.trim()) return;
 
-    const query = voiceQuery.toLowerCase().trim();
-    setVoiceQuery('');
+    const query = rawQuery.toLowerCase().trim();
     setIsListening(false);
 
     if (query.includes('устал') || query.includes('устала') || query.includes('сил нет')) {
@@ -574,13 +574,12 @@ export default function App() {
 
   const startListeningDemo = () => {
     setIsListening(true);
-    setVoiceQuery('');
     setVoiceReply('Слушаю...');
     
     setTimeout(() => {
       const demoQueries = ['я устал', 'хочу спать', 'нужен фокус', 'как успокоиться'];
       const randomQuery = demoQueries[Math.floor(Math.random() * demoQueries.length)];
-      setVoiceQuery(randomQuery);
+      handleVoiceQuery(randomQuery);
     }, 2500);
   };
 
@@ -595,16 +594,36 @@ export default function App() {
     }
   };
 
+  const handleShare = async () => {
+    const message = shine.total > 0
+      ? `Моё Сияние сегодня — ${shine.total}%. Ritual помогает понимать состояние и управлять им.`
+      : 'Ritual — внимание к себе и практики для состояния.';
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ title: 'Ritual', text: message });
+        return;
+      } catch {
+        // user cancelled
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(message);
+    } catch {
+      // clipboard unavailable
+    }
+  };
+
   return (
-    <div className="relative min-h-screen bg-black text-white flex flex-col justify-between overflow-x-hidden font-sans">
+    <div className="ritual-bentoless relative min-h-screen bg-[#08090A] text-[#F2EFE8] flex flex-col justify-between overflow-x-hidden font-sans">
       
-      {/* Subtle background */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-black" />
+      {/* Continuous canvas */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[#08090A]" />
 
       {!selectedPractice && (
         <>
           {/* Top header */}
-          <header className="relative z-10 w-full max-w-md mx-auto pt-[calc(env(safe-area-inset-top)+1.5rem)] px-6 flex justify-between items-center">
+          {!healthOverlayOpen && (
+          <header className="absolute top-0 left-1/2 -translate-x-1/2 z-20 w-full max-w-md mx-auto px-6 flex justify-between items-center pt-[calc(env(safe-area-inset-top)+1.25rem)]">
             <button 
               aria-label="Открыть профиль"
               onClick={() => switchTab('profile')}
@@ -612,27 +631,47 @@ export default function App() {
             >
               <User className="w-4 h-4 text-white/40" strokeWidth={2} />
             </button>
-            <button 
-              aria-label="Открыть подписку"
-              onClick={() => setShowSubscription(true)}
-              className={`text-[11px] font-medium tracking-wide transition-colors ${
-                isSubscribed ? 'text-white/60 hover:text-white/80' : 'text-amber-400 hover:text-amber-300'
-              }`}
-            >
-              {isSubscribed ? 'Plus' : 'Lite →'}
-            </button>
+            {activeTab === 'today' || activeTab === 'progress' ? (
+              <button
+                aria-label="Поделиться"
+                onClick={() => void handleShare()}
+                className="w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.1] transition-colors duration-[160ms] ease-out active:scale-[0.97]"
+              >
+                <Share2 className="w-4 h-4 text-white/50" strokeWidth={2} />
+              </button>
+            ) : activeTab === 'practices' ? (
+              <button
+                aria-label="Поиск практик"
+                onClick={() => setPracticesSearchOpen(v => !v)}
+                className="w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.1] transition-colors duration-[160ms] ease-out active:scale-[0.97]"
+              >
+                <Search className="w-4 h-4 text-white/50" strokeWidth={2} />
+              </button>
+            ) : (
+              <button
+                aria-label="Открыть подписку"
+                onClick={() => setShowSubscription(true)}
+                className={`text-[11px] font-medium tracking-wide transition-colors duration-[160ms] ease-out ${
+                  isSubscribed ? 'text-white/60 hover:text-white/80' : 'text-amber-400 hover:text-amber-300'
+                }`}
+              >
+                {isSubscribed ? 'Plus' : 'Lite →'}
+              </button>
+            )}
           </header>
+          )}
 
-          {/* Main content */}
-          <main className="relative flex-1 w-full max-w-md mx-auto px-5 pt-4 pb-24">
-            <AnimatePresence mode="wait">
+          <main className={`relative z-10 flex-1 w-full max-w-md mx-auto px-5 pb-24 ${
+            activeTab === 'today' ? 'pt-0' : 'pt-[calc(env(safe-area-inset-top)+3.75rem)]'
+          }`}>
+            <AnimatePresence initial={false}>
               {activeTab === 'today' && (
                 <motion.div
                   key="today"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
+                  transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <RitualDashboard 
                     practices={practices}
@@ -644,6 +683,7 @@ export default function App() {
                     historyByMetric={historyByMetric}
                     availabilityByMetric={availabilityByMetric}
                     onRefreshHealth={refreshHealth}
+                    onHealthOpenChange={setHealthOverlayOpen}
                   />
                 </motion.div>
               )}
@@ -653,14 +693,16 @@ export default function App() {
                   key="practices"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
+                  transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <PracticesList 
                     practices={practices}
                     onSelectPractice={handleSelectPractice}
                     onSelectTool={(toolId) => setActiveTool(toolId)}
                     onOpenInsights={() => setShowInsights(true)}
+                    searchOpen={practicesSearchOpen}
+                    onSearchClose={() => setPracticesSearchOpen(false)}
                   />
                 </motion.div>
               )}
@@ -670,8 +712,8 @@ export default function App() {
                   key="progress"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
+                  transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <StatsPanel 
                     stats={stats}
@@ -686,8 +728,8 @@ export default function App() {
                   key="profile"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
+                  transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <Profile 
                     isSubscribed={isSubscribed}
@@ -707,6 +749,7 @@ export default function App() {
           </main>
 
           {/* Bottom navigation */}
+          {!healthOverlayOpen && (
           <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] left-1/2 -translate-x-1/2 w-full max-w-[340px] px-4 z-[15] flex items-center gap-2">
             {/* Main nav pill */}
             <nav className="flex items-center h-[52px] flex-1 px-2 bg-[#111114]/90 backdrop-blur-xl rounded-full border border-white/[0.06]">
@@ -750,6 +793,7 @@ export default function App() {
               <Mic className="w-[18px] h-[18px]" strokeWidth={2.5} />
             </button>
           </div>
+          )}
         </>
       )}
 
@@ -813,125 +857,16 @@ export default function App() {
       {/* AI voice assistant overlay */}
       <AnimatePresence>
         {isVoiceOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[#070709]/98 backdrop-blur-2xl flex flex-col justify-end p-6"
-          >
-            {/* Header */}
-            <div className="absolute top-6 left-6 right-6 flex justify-between items-center">
-              <span className="text-[10px] tracking-[0.2em] text-white/60 uppercase">Ассистент</span>
-              <button 
-                onClick={() => {
-                  setIsVoiceOpen(false);
-                  setIsListening(false);
-                }}
-                className="w-9 h-9 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.08] active:scale-95 transition-all"
-              >
-                <X className="w-4 h-4 text-white/60" />
-              </button>
-            </div>
-
-            {/* Sound wave + reply */}
-            <div className="flex-1 flex flex-col items-center justify-center gap-8">
-              <div className="flex items-center justify-center gap-1 h-16">
-                {[...Array(7)].map((_, i) => (
-                  <motion.div 
-                    key={i}
-                    animate={{
-                      height: isListening 
-                        ? [16, Math.random() * 50 + 16, 16] 
-                        : [16, Math.sin(i) * 8 + 16, 16]
-                    }}
-                    transition={{
-                      duration: isListening ? 0.6 : 1.5,
-                      repeat: Infinity,
-                      delay: i * 0.08
-                    }}
-                    className="w-1 rounded-full bg-[#e8e0d4]/40"
-                    style={{ opacity: isListening ? 0.7 : 0.25 }}
-                  />
-                ))}
-              </div>
-
-              <div className="max-w-sm text-center px-4">
-                <motion.div 
-                  key={voiceReply}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white/[0.03] border border-white/[0.06] rounded-3xl p-5 text-sm leading-relaxed text-white/80"
-                >
-                  <p>{voiceReply}</p>
-                </motion.div>
-                
-                {isListening && (
-                  <span className="text-xs text-[#e8e0d4]/60 tracking-wider mt-4 block">
-                    Слушаю...
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Input */}
-            <div className="w-full max-w-md mx-auto flex flex-col gap-3 pb-6">
-              <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
-                <button 
-                  onClick={() => {
-                    setVoiceQuery('я устал');
-                    setTimeout(() => handleVoiceSubmit(), 10);
-                  }}
-                  className="flex-none px-4 py-2 rounded-2xl bg-white/[0.04] border border-white/[0.04] hover:border-white/[0.08] text-xs text-white/50 transition-all"
-                >
-                  Я устал
-                </button>
-                <button 
-                  onClick={() => {
-                    setVoiceQuery('хочу спать');
-                    setTimeout(() => handleVoiceSubmit(), 10);
-                  }}
-                  className="flex-none px-4 py-2 rounded-2xl bg-white/[0.04] border border-white/[0.04] hover:border-white/[0.08] text-xs text-white/50 transition-all"
-                >
-                  Хочу спать
-                </button>
-                <button 
-                  onClick={() => {
-                    setVoiceQuery('нужен фокус');
-                    setTimeout(() => handleVoiceSubmit(), 10);
-                  }}
-                  className="flex-none px-4 py-2 rounded-2xl bg-white/[0.04] border border-white/[0.04] hover:border-white/[0.08] text-xs text-white/50 transition-all"
-                >
-                  Нужен фокус
-                </button>
-              </div>
-
-              <form onSubmit={handleVoiceSubmit} className="flex gap-2 items-center">
-                <button
-                  type="button"
-                  onClick={startListeningDemo}
-                  className="h-11 w-11 rounded-2xl bg-[#e8e0d4] text-[#070709] flex items-center justify-center active:scale-95 transition-all"
-                >
-                  <Mic className="w-[18px] h-[18px] stroke-[2]" />
-                </button>
-
-                <div className="flex-1 relative flex items-center">
-                  <input 
-                    type="text"
-                    value={voiceQuery}
-                    onChange={(e) => setVoiceQuery(e.target.value)}
-                    placeholder="Состояние..."
-                    className="w-full h-11 bg-white/[0.04] border border-white/[0.06] rounded-2xl px-4 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/[0.12] font-sans"
-                  />
-                  <button
-                    type="submit"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] flex items-center justify-center text-white/60 active:scale-95 transition-all"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </form>
-            </div>
-          </motion.div>
+          <VoiceAssistantOverlay
+            reply={voiceReply}
+            isListening={isListening}
+            onClose={() => {
+              setIsVoiceOpen(false);
+              setIsListening(false);
+            }}
+            onListen={startListeningDemo}
+            onSubmit={handleVoiceQuery}
+          />
         )}
       </AnimatePresence>
     </div>

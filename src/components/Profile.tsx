@@ -18,6 +18,8 @@ import RingConnectionWizard from './RingConnectionWizard';
 import { requestPrivacySafeSync, pullPreferencesFromSupabase } from '../services/supabase/privacySync';
 import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged, signOutAuth } from '../services/supabase/auth';
 import ProfileProductSettings from './ProfileProductSettings';
+import GlassSurface from './ui/GlassSurface';
+import SectionMeta from './ui/SectionMeta';
 
 interface ProfileProps {
   onOpenSubscription: () => void;
@@ -290,86 +292,66 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
   return (
     <div className="w-full flex flex-col gap-5 pb-28 select-none">
 
-      {/* SECTION 1: Личность */}
-      <div className="rounded-2xl bg-white/[0.02] border border-white/[0.04] overflow-hidden flex flex-col items-center text-center p-6 relative">
-        {/* Photo background */}
-        <div className="absolute inset-0">
-          <img
-            src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=600&auto=format&fit=crop"
-            alt=""
-            className="w-full h-full object-cover opacity-[0.06]"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#070709]/90" />
-        </div>
-
-        {/* Avatar */}
-        <div className="relative mb-4 z-10">
-          <label className="w-20 h-20 rounded-full bg-white/[0.04] flex items-center justify-center border border-white/[0.08] overflow-hidden cursor-pointer" title="Сменить аватар">
-            {avatarUrl ? <img src={avatarUrl} alt="Аватар" className="w-full h-full object-cover" /> : <User className="w-10 h-10 text-white/40" />}
+      {/* Identity — centered, no photo card */}
+      <GlassSurface className="flex flex-col items-center text-center p-6">
+        <div className="relative mb-4">
+          <label className="w-20 h-20 rounded-full bg-white/[0.06] flex items-center justify-center border border-white/10 overflow-hidden cursor-pointer" title="Сменить аватар">
+            {avatarUrl ? <img src={avatarUrl} alt="Аватар" className="w-full h-full object-cover" /> : <User className="w-10 h-10 text-[#F2EFE8]/35" />}
             <input type="file" accept="image/*" className="hidden" onChange={event => handleAvatarFile(event.target.files?.[0])} />
           </label>
           {isSubscribed && (
-            <span className="absolute -bottom-1 -right-1 bg-white/[0.1] border border-white/[0.08] text-white/60 text-[8px] uppercase tracking-wider py-0.5 px-1.5 rounded-full">
+            <span className="absolute -bottom-1 -right-1 bg-white/[0.10] border border-white/10 text-[#F2EFE8]/60 text-[8px] uppercase tracking-wider py-0.5 px-1.5 rounded-full">
               Plus
             </span>
           )}
         </div>
 
-        {/* Edit Name */}
-        <div className="flex items-center gap-2 mb-2 z-10">
+        <div className="flex items-center gap-2 mb-2">
           {isEditingName ? (
-            <div className="flex items-center gap-1 bg-white/[0.04] border border-white/[0.06] rounded-lg p-1">
+            <div className="flex items-center gap-1 bg-white/[0.06] border border-white/10 rounded-lg p-1">
               <input
                 type="text"
                 value={tempName}
                 onChange={(e) => setTempName(e.target.value)}
-                className="bg-transparent text-sm font-normal text-white/80 px-2 focus:outline-none w-32"
+                className="bg-transparent text-sm text-[#F2EFE8]/90 px-2 focus:outline-none w-32"
                 maxLength={20}
               />
-              <button
-                onClick={handleSaveName}
-                className="w-7 h-7 rounded-md bg-white/[0.08] flex items-center justify-center"
-              >
-                <Check className="w-3.5 h-3.5 text-white/60" />
+              <button onClick={handleSaveName} className="w-7 h-7 rounded-md bg-white/[0.08] flex items-center justify-center">
+                <Check className="w-3.5 h-3.5 text-[#F2EFE8]/60" />
               </button>
             </div>
           ) : (
             <>
-              <h3 className="text-base font-semibold text-white/90">{userName}</h3>
-              <button
-                onClick={() => { setTempName(userName); setIsEditingName(true); }}
-                className="text-white/60 p-1"
-              >
+              <h3 className="text-base font-semibold text-[#F2EFE8]/90">{userName}</h3>
+              <button onClick={() => { setTempName(userName); setIsEditingName(true); }} className="text-[#F2EFE8]/40 p-1">
                 <Edit3 className="w-3.5 h-3.5" />
               </button>
             </>
           )}
         </div>
         {authDisplayName !== userName && (
-          <p className="text-[10px] text-white/35 z-10 mb-2 max-w-[240px] truncate">
-            Аккаунт: {authDisplayName}
-          </p>
+          <p className="text-[11px] text-[#F2EFE8]/35 mb-2 max-w-[240px] truncate">Аккаунт: {authDisplayName}</p>
         )}
 
-        {/* Subscription */}
         {isSubscribed ? (
-          <div className="py-1 px-3 rounded-full bg-white/[0.04] border border-white/[0.06] z-10">
-            <span className="text-[10px] text-white/55 uppercase tracking-wider font-semibold">Ritual Plus</span>
+          <div className="py-1 px-3 rounded-full bg-white/[0.06] border border-white/10">
+            <span className="text-[10px] text-[#F2EFE8]/55 uppercase tracking-wider font-semibold">Ritual Plus</span>
           </div>
         ) : (
           <button
             onClick={onOpenSubscription}
-            className="w-full mt-3 h-11 rounded-xl bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.06] transition-all flex items-center justify-center gap-2 text-[11px] text-white/75 font-semibold z-10"
+            className="w-full mt-3 h-11 rounded-xl bg-[#F2EFE8] text-[#08090A] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.97] transition-all flex items-center justify-center gap-2 text-[13px]"
           >
-            <Shield className="w-3.5 h-3.5 text-white/40" />
-            <span>Активировать Ritual Plus</span>
+            <Shield className="w-3.5 h-3.5" />
+            <span>Ritual Plus</span>
           </button>
         )}
-      </div>
+      </GlassSurface>
 
-      {/* SECTION 2: Источники данных */}
-      <div className="rounded-2xl bg-white/[0.02] border border-white/[0.04] p-4 flex flex-col gap-3">
+      {/* Ritual Core sources */}
+      <div className="flex flex-col gap-3">
+        <SectionMeta>Ritual Core</SectionMeta>
+      <GlassSurface className="p-4 flex flex-col gap-3">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center">
             <Cpu className="w-4 h-4 text-white/40" />
@@ -552,6 +534,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             )}
           </AnimatePresence>
         </div>
+      </GlassSurface>
       </div>
 
       {/* Ring CTA Banner */}

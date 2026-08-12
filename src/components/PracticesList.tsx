@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wind, Activity, Compass, Volume2, Heart, FlaskConical } from 'lucide-react';
 import { Practice } from '../types';
@@ -6,6 +6,9 @@ import { standaloneData, StandalonePractice, STANDALONE_GROUP_COLORS, STANDALONE
 import PracticePlayer from './PracticePlayer';
 import PracticeCard from './PracticeCard';
 import StandalonePracticeCard from './StandalonePracticeCard';
+import ToolTile from './ui/ToolTile';
+import SectionMeta from './ui/SectionMeta';
+import GlassSurface from './ui/GlassSurface';
 import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 
 interface PracticesListProps {
@@ -13,53 +16,32 @@ interface PracticesListProps {
   onSelectPractice: (practice: Practice) => void;
   onSelectTool: (toolId: 'breathing' | 'activity' | 'focus' | 'atmosphere') => void;
   onOpenInsights?: () => void;
+  searchOpen?: boolean;
+  onSearchClose?: () => void;
 }
 
 type FilterMood = 'all' | 'favorites' | 'istok' | 'tishina' | 'energiya' | 'yasnost';
 
 const STANDALONE_GROUPS: ChapterId[] = ['istok', 'tishina', 'energiya', 'yasnost'];
 
-const GROUP_SUBTITLES: Record<ChapterId, string> = {
-  istok: '7 практик · Возвращение к себе',
-  tishina: '10 практик · Глубокий покой',
-  energiya: '9 практик · Внутренний огонь',
-  yasnost: '9 практик · Зеркальная призма',
-};
-
-const TOOL_CARDS = [
-  {
-    tool: 'breathing' as const,
-    title: 'Дыхание',
-    subtitle: '9 ритмов · Кастом',
-    icon: Wind,
-    img: 'https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?q=80&w=400&auto=format&fit=crop',
-  },
-  {
-    tool: 'activity' as const,
-    title: 'Активность',
-    subtitle: 'Трекинг · Цели',
-    icon: Activity,
-    img: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?q=80&w=400&auto=format&fit=crop',
-  },
-  {
-    tool: 'focus' as const,
-    title: 'Фокус',
-    subtitle: 'Таймер · Помодоро',
-    icon: Compass,
-    img: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=400&auto=format&fit=crop',
-  },
-  {
-    tool: 'atmosphere' as const,
-    title: 'Атмосфера',
-    subtitle: 'Звуковой ландшафт',
-    icon: Volume2,
-    img: 'https://images.unsplash.com/photo-1507400492013-162706c8c05e?q=80&w=400&auto=format&fit=crop',
-  },
+const TOOL_TILES = [
+  { tool: 'breathing' as const, title: 'Дыхание', subtitle: '9 ритмов', icon: Wind, accent: '#74B6A0' },
+  { tool: 'activity' as const, title: 'Активность', subtitle: 'Трекинг', icon: Activity, accent: '#7dd3fc' },
+  { tool: 'focus' as const, title: 'Фокус', subtitle: 'Помодоро', icon: Compass, accent: '#C59A55' },
+  { tool: 'atmosphere' as const, title: 'Атмосфера', subtitle: 'Звук', icon: Volume2, accent: '#a78bfa' },
 ];
 
-export default function PracticesList({ practices, onSelectPractice, onSelectTool, onOpenInsights }: PracticesListProps) {
+export default function PracticesList({
+  practices,
+  onSelectPractice,
+  onSelectTool,
+  onOpenInsights,
+  searchOpen = false,
+  onSearchClose,
+}: PracticesListProps) {
   const [activeFilter, setActiveFilter] = useState<FilterMood>('istok');
   const [activeStandalone, setActiveStandalone] = useState<StandalonePractice | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
     try {
@@ -104,127 +86,144 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
     'Фокус': 'yasnost',
   };
 
-  const filteredPractices = practices.filter(p => {
-    if (activeFilter === 'all') return true;
-    if (activeFilter === 'favorites') return favoriteIds.includes(p.id);
-    return MOOD_MAPPING[p.mood] === activeFilter;
-  });
+  const q = searchQuery.trim().toLowerCase();
+
+  const filteredPractices = useMemo(() => {
+    return practices.filter(p => {
+      if (q && !p.title.toLowerCase().includes(q) && !p.mood.toLowerCase().includes(q)) return false;
+      if (activeFilter === 'all') return true;
+      if (activeFilter === 'favorites') return favoriteIds.includes(p.id);
+      return MOOD_MAPPING[p.mood] === activeFilter;
+    });
+  }, [practices, activeFilter, favoriteIds, q]);
+
+  const standaloneItems = useMemo(() => {
+    let items: StandalonePractice[] = [];
+    if (activeFilter === 'all') {
+      items = STANDALONE_GROUPS.flatMap(groupId => standaloneData[groupId] || []);
+    } else if (activeFilter === 'favorites') {
+      const allStandalone = STANDALONE_GROUPS.flatMap(groupId => standaloneData[groupId] || []);
+      items = allStandalone.filter(p => favoriteIds.includes(p.id));
+    } else {
+      items = standaloneData[activeFilter] || [];
+    }
+    if (q) {
+      items = items.filter(p =>
+        p.title.toLowerCase().includes(q) || p.subtitle.toLowerCase().includes(q)
+      );
+    }
+    return items;
+  }, [activeFilter, favoriteIds, q]);
 
   return (
-    <div className="w-full max-w-md mx-auto flex flex-col gap-5 select-none pb-24">
+    <div className="w-full flex flex-col gap-8 select-none pb-24">
+      <AnimatePresence>
+        {searchOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            className="flex items-center gap-2 -mt-2"
+          >
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Найти практику..."
+              className="flex-1 h-11 px-4 rounded-full border border-white/10 bg-white/[0.06] backdrop-blur-xl text-[15px] text-[#F2EFE8]/90 placeholder:text-[#F2EFE8]/30 outline-none focus:border-white/20"
+            />
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(''); onSearchClose?.(); }}
+              className="text-[13px] text-[#F2EFE8]/42 px-2"
+            >
+              Отмена
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {!activeStandalone && (
         <>
-
-      {/* SECTION: ИНСТРУМЕНТЫ */}
-      <div className="flex flex-col gap-3">
-        <span className="text-[11px] text-white/55 uppercase px-1 tracking-[0.15em] font-semibold">Инструменты</span>
-
-        <div className="grid grid-cols-2 gap-3">
-          {TOOL_CARDS.map((card) => {
-            const TIcon = card.icon;
-            return (
-              <motion.div
-                key={card.tool}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => onSelectTool(card.tool)}
-                className="relative rounded-2xl border border-white/[0.04] overflow-hidden cursor-pointer flex flex-col justify-between h-32 hover:border-white/[0.08] transition-all"
-              >
-                <img
-                  src={card.img}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
-
-                <div className="relative z-10 p-3.5 pb-0">
-                  <div className="w-8 h-8 rounded-lg bg-white/[0.08] backdrop-blur-sm flex items-center justify-center border border-white/[0.06]">
-                    <TIcon className="w-4 h-4 text-white/70" strokeWidth={2} />
-                  </div>
+          {/* Инструменты — compact glass tiles */}
+          <section className="flex flex-col gap-4">
+            <SectionMeta>Инструменты</SectionMeta>
+            <div className="grid grid-cols-2 gap-3 items-stretch">
+              {TOOL_TILES.map((tile) => (
+                <div key={tile.tool} className="min-h-[104px]">
+                  <ToolTile
+                    title={tile.title}
+                    subtitle={tile.subtitle}
+                    icon={tile.icon}
+                    accent={tile.accent}
+                    onClick={() => onSelectTool(tile.tool)}
+                  />
                 </div>
-
-                <div className="relative z-10 p-3.5 pt-0">
-                  <h4 className="text-sm font-semibold text-white">{card.title}</h4>
-                  <span className="text-[10px] text-white/55 font-medium">{card.subtitle}</span>
+              ))}
+            </div>
+            {onOpenInsights && (
+              <GlassSurface as="button" onClick={onOpenInsights} className="p-4 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#7dd3fc]/10 flex items-center justify-center">
+                  <FlaskConical className="w-4 h-4 text-[#7dd3fc]/80" />
                 </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      </div>
+                <div className="text-left">
+                  <p className="text-[15px] font-semibold text-[#F2EFE8]/90">Ritual Insights</p>
+                  <p className="text-[11px] text-[#F2EFE8]/42 mt-0.5">Исследования внимания и состояния</p>
+                </div>
+              </GlassSurface>
+            )}
+          </section>
 
-      <button onClick={onOpenInsights} className="rounded-2xl border border-sky-300/10 bg-sky-300/[0.035] p-4 flex items-center gap-3 text-left">
-        <div className="w-9 h-9 rounded-xl bg-sky-300/10 flex items-center justify-center"><FlaskConical className="w-4 h-4 text-sky-200/70" /></div>
-        <div><p className="text-sm font-semibold text-white/85">Ritual Insights</p><p className="text-[10px] text-white/45 mt-0.5">Исследования внимания, сна и состояния</p></div>
-      </button>
+          {/* Направление — filters */}
+          <section className="flex flex-col gap-3">
+            <SectionMeta>Направление</SectionMeta>
+            <div className="flex overflow-x-auto gap-2 hide-scrollbar pb-1">
+              {filters.map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setActiveFilter(filter.value)}
+                  className={`flex-none px-4 py-2 rounded-full text-[13px] font-medium border transition-colors duration-[160ms] ease-out ${
+                    activeFilter === filter.value
+                      ? 'bg-white/[0.08] text-[#F2EFE8]/90 border-white/12'
+                      : 'bg-transparent text-[#F2EFE8]/42 border-[rgba(242,239,232,0.12)] hover:text-[#F2EFE8]/60'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </section>
 
-      {/* Category Horizontal Filter */}
-      <div className="flex flex-col gap-3">
-        <span className="text-[11px] text-white/55 uppercase px-1 tracking-[0.15em] font-semibold">Категории</span>
+          {/* Base practices — hairline rows */}
+          {filteredPractices.length > 0 && (
+            <section className="flex flex-col">
+              {filteredPractices.map((practice, index) => (
+                <div key={practice.id}>
+                  <PracticeCard
+                    practice={practice}
+                    onClick={() => onSelectPractice(practice)}
+                    index={index}
+                    isFavProp={favoriteIds.includes(practice.id)}
+                    onToggleFav={handleToggleFavorite}
+                  />
+                </div>
+              ))}
+            </section>
+          )}
 
-        <div className="flex overflow-x-auto gap-2 hide-scrollbar pb-1">
-          {filters.map((filter) => (
-            <button
-              key={filter.value}
-              onClick={() => setActiveFilter(filter.value)}
-              className={`flex-none px-4 py-2 rounded-full text-[12px] font-medium transition-all border duration-300 ${
-                activeFilter === filter.value
-                  ? 'bg-white/[0.08] text-white border-white/[0.12]'
-                  : 'bg-white/[0.02] text-white/50 border-white/[0.04] hover:text-white/70 hover:bg-white/[0.04]'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Practice cards */}
-      <div className="flex flex-col gap-2">
-        {filteredPractices.length > 0 && (
-          <span className="text-[11px] text-white/55 uppercase px-1 tracking-[0.15em] font-semibold mb-1 block">
-            {activeFilter === 'all' ? 'Все базовые практики' : activeFilter === 'favorites' ? 'Избранные практики' : 'Базовые практики'}
-          </span>
-        )}
-        {filteredPractices.map((practice, index) => (
-          <div key={practice.id}>
-            <PracticeCard
-              practice={practice}
-              onClick={() => onSelectPractice(practice)}
-              index={index}
-              isFavProp={favoriteIds.includes(practice.id)}
-              onToggleFav={handleToggleFavorite}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* STANDALONE PRACTICES SECTION */}
-      {(() => {
-        let items: StandalonePractice[] = [];
-        let sectionTitle = '';
-        
-        if (activeFilter === 'all') {
-          items = STANDALONE_GROUPS.flatMap(groupId => standaloneData[groupId] || []);
-          sectionTitle = 'Все медитации';
-        } else if (activeFilter === 'favorites') {
-          const allStandalone = STANDALONE_GROUPS.flatMap(groupId => standaloneData[groupId] || []);
-          items = allStandalone.filter(p => favoriteIds.includes(p.id));
-          sectionTitle = 'Избранные медитации';
-        } else {
-          items = standaloneData[activeFilter] || [];
-          sectionTitle = `Медитации Группы «${STANDALONE_GROUP_TITLES[activeFilter]}»`;
-        }
-
-        if (items.length === 0) return null;
-
-        return (
-          <div className="flex flex-col gap-3 mt-1">
-            <span className="text-[11px] text-white/55 uppercase px-1 tracking-[0.15em] font-semibold">
-              {sectionTitle}
-            </span>
-            <div className="flex flex-col gap-1.5">
-              {items.map((practice, idx) => (
+          {/* Standalone meditations */}
+          {standaloneItems.length > 0 && (
+            <section className="flex flex-col">
+              <SectionMeta className="mb-3 block">
+                {activeFilter === 'all'
+                  ? 'Медитации'
+                  : activeFilter === 'favorites'
+                    ? 'Избранные медитации'
+                    : STANDALONE_GROUP_TITLES[activeFilter]}
+              </SectionMeta>
+              {standaloneItems.map((practice, idx) => (
                 <div key={practice.id}>
                   <StandalonePracticeCard
                     practice={practice}
@@ -235,55 +234,26 @@ export default function PracticesList({ practices, onSelectPractice, onSelectToo
                   />
                 </div>
               ))}
-            </div>
-          </div>
-        );
-      })()}
+            </section>
+          )}
 
-      {/* Empty state for Favorites */}
-      {activeFilter === 'favorites' && filteredPractices.length === 0 && (
-        (() => {
-          const allStandalone = STANDALONE_GROUPS.flatMap(groupId => standaloneData[groupId] || []);
-          const favoriteStandalone = allStandalone.filter(p => favoriteIds.includes(p.id));
-          if (favoriteStandalone.length === 0) {
-            return (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="rounded-2xl p-6 border border-white/[0.04] bg-white/[0.01] text-center flex flex-col items-center gap-3 py-10"
-              >
-                <Heart className="w-8 h-8 text-white/10" strokeWidth={1.5} />
-                <h4 className="text-sm font-semibold text-white/70">Избранное пусто</h4>
-                <p className="text-[11px] text-white/40 leading-relaxed max-w-[240px]">
-                  Нажмите на сердечко <Heart className="w-3 h-3 inline fill-white/15 text-white/30" /> у любой практики или медитации, чтобы добавить её сюда.
-                </p>
-              </motion.div>
-            );
-          }
-          return null;
-        })()
-      )}
-
-      {/* Insight Section */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
-        className="rounded-2xl p-4 border border-white/[0.04] bg-white/[0.02]"
-      >
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-1 h-1 rounded-full bg-white/30" />
-          <span className="text-[10px] text-white/50 uppercase tracking-wider">Рекомендация</span>
-        </div>
-        <h4 className="text-sm font-normal text-white/70 mb-1">Балансируйте практику</h4>
-        <p className="text-[11px] text-white/35 leading-relaxed font-normal">
-          Судя по активности за неделю, упражнение <span className="text-white/55">Успокоиться</span> поможет снизить напряжение перед сном.
-        </p>
-      </motion.div>
+          {/* Favorites empty */}
+          {activeFilter === 'favorites' && filteredPractices.length === 0 && standaloneItems.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="py-12 text-center flex flex-col items-center gap-3"
+            >
+              <Heart className="w-8 h-8 text-[#F2EFE8]/15" strokeWidth={1.5} />
+              <p className="text-[15px] text-[#F2EFE8]/60">Избранное пусто</p>
+              <p className="text-[13px] text-[#F2EFE8]/35 max-w-[240px] leading-relaxed">
+                Нажмите на сердечко у любой практики, чтобы добавить её сюда.
+              </p>
+            </motion.div>
+          )}
         </>
       )}
 
-      {/* Active Standalone Practice Modal */}
       <AnimatePresence>
         {activeStandalone && (
           <PracticePlayer

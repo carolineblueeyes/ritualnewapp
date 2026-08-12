@@ -86,11 +86,11 @@ export function deleteNote(id: string): void {
 export function getAchievementDefinitions(stats: UserStats): AchievementDefinition[] {
   const uniqueDays = new Set(stats.history.map(item => item.date.slice(0, 10))).size;
   return [
-    { id: 'first_ritual', title: 'Первый шаг', description: 'Завершить первый ритуал', icon: '✦', unlocked: stats.completedCount >= 1 },
-    { id: 'seven_rituals', title: 'Ритм', description: 'Завершить 7 ритуалов', icon: '◌', unlocked: stats.completedCount >= 7 },
-    { id: 'seven_days', title: 'Неделя внимания', description: 'Практиковать 7 разных дней', icon: '◇', unlocked: uniqueDays >= 7 },
-    { id: 'streak_7', title: 'Поток', description: 'Серия из 7 дней', icon: '≈', unlocked: stats.streakDays >= 7 },
-    { id: 'sixty_minutes', title: 'Час для себя', description: 'Накопить 60 минут практики', icon: '◉', unlocked: stats.totalMinutes >= 60 },
+    { id: 'first_ritual', title: 'Первый шаг', description: 'Завершить первый ритуал', icon: '', unlocked: stats.completedCount >= 1 },
+    { id: 'seven_rituals', title: 'Ритм', description: 'Завершить 7 ритуалов', icon: '', unlocked: stats.completedCount >= 7 },
+    { id: 'seven_days', title: 'Неделя внимания', description: 'Практиковать 7 разных дней', icon: '', unlocked: uniqueDays >= 7 },
+    { id: 'streak_7', title: 'Поток', description: 'Серия из 7 дней', icon: '', unlocked: stats.streakDays >= 7 },
+    { id: 'sixty_minutes', title: 'Час для себя', description: 'Накопить 60 минут практики', icon: '', unlocked: stats.totalMinutes >= 60 },
   ];
 }
 

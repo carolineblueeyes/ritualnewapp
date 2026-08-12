@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Check } from 'lucide-react';
 import { InteractionConfig } from '../data/practices/types';
 
 interface PracticeInteractiveProps {
@@ -333,7 +334,7 @@ export default function PracticeInteractive({
                 className="text-xl"
                 style={{ color: crystalColor }}
               >
-                ✓
+                <Check className="w-6 h-6" strokeWidth={2} style={{ color: crystalColor }} />
               </motion.div>
             ) : (
               <span className="text-[10px] font-mono text-white/50 uppercase">Удерживайте</span>

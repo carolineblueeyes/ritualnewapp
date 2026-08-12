@@ -198,3 +198,21 @@ export function getShineColor(score: number, dataQuality: string): string {
   if (score >= 40) return '#fbbf24';
   return '#fb7185';
 }
+
+const STATE_ACCENT: Record<ShineState, string> = {
+  shining: '#74B6A0',
+  balanced: '#7dd3fc',
+  tense: '#C59A55',
+  overload: '#C56855',
+  waiting: '#94a3b8',
+};
+
+export function getShineAccentColor(
+  state: ShineState | undefined,
+  score: number,
+  dataQuality: string,
+): string {
+  if (dataQuality === 'none') return STATE_ACCENT.waiting;
+  if (state && state in STATE_ACCENT) return STATE_ACCENT[state];
+  return getShineColor(score, dataQuality);
+}

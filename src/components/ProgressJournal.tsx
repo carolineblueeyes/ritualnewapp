@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Award, Check, Plus, Target, Trash2 } from 'lucide-react';
+import { Check, Plus, Trash2 } from 'lucide-react';
 import type { UserStats } from '../types';
 import { addGoal, addNote, archiveGoal, deleteNote, getAchievementDefinitions, getGoals, getNotes, goalProgress, syncAchievements } from '../services/productState';
+import GlassSurface from './ui/GlassSurface';
+import SectionMeta from './ui/SectionMeta';
 
 export default function ProgressJournal({ stats }: { stats: UserStats }) {
   const [goals, setGoals] = useState(getGoals);
@@ -28,30 +30,113 @@ export default function ProgressJournal({ stats }: { stats: UserStats }) {
   };
 
   return (
-    <div className="flex flex-col gap-5">
-      <section className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
-        <div className="flex items-center gap-2 mb-1"><Target className="w-4 h-4 text-amber-300" /><h3 className="text-sm font-semibold text-white">Цели</h3></div>
-        <p className="text-[11px] text-white/45 mb-4">Цели помогают направить внимание.</p>
-        <div className="flex flex-col gap-2">
+    <div className="py-8 flex flex-col gap-10 border-t border-[rgba(242,239,232,0.12)]">
+      {/* Цели — glass card */}
+      <section className="flex flex-col gap-4">
+        <SectionMeta>Цели</SectionMeta>
+        <GlassSurface className="p-4 flex flex-col gap-0">
           {goals.map(goal => {
             const progress = goalProgress(goal, stats);
             const percentage = Math.min(100, Math.round((progress / goal.targetCount) * 100));
-            return <div key={goal.id} className="rounded-xl bg-black/20 border border-white/[0.05] p-3">
-              <div className="flex items-center justify-between gap-3"><div><p className="text-xs text-white/85 font-medium">{goal.title}</p><p className="text-[10px] text-white/45 mt-1">{progress} из {goal.targetCount} ритуалов за неделю</p></div><button aria-label="Удалить цель" onClick={() => { archiveGoal(goal.id); setGoals(getGoals()); }} className="p-2 text-white/30 hover:text-white/70"><Trash2 className="w-3.5 h-3.5" /></button></div>
-              <div className="h-1 rounded-full bg-white/[0.05] mt-3 overflow-hidden"><div className="h-full bg-amber-300/80" style={{ width: `${percentage}%` }} /></div>
-            </div>;
+            return (
+              <div key={goal.id} className="border-b border-[rgba(242,239,232,0.12)] py-4 last:border-0">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[15px] font-medium text-[#F2EFE8]/90">{goal.title}</p>
+                    <p className="text-[13px] text-[#F2EFE8]/42 mt-1">{progress} из {goal.targetCount} ритуалов</p>
+                  </div>
+                  <button
+                    aria-label="Удалить цель"
+                    onClick={() => { archiveGoal(goal.id); setGoals(getGoals()); }}
+                    className="p-2 text-[#F2EFE8]/25 hover:text-[#F2EFE8]/60"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="h-px bg-[rgba(242,239,232,0.08)] mt-3 overflow-hidden">
+                  <div className="h-px bg-[#C59A55]/80 transition-all duration-500" style={{ width: `${percentage}%` }} />
+                </div>
+              </div>
+            );
           })}
-          <div className="grid grid-cols-[1fr_64px_40px] gap-2 mt-1"><input value={goalTitle} onChange={event => setGoalTitle(event.target.value)} maxLength={120} aria-label="Название цели" className="min-w-0 rounded-xl bg-black/20 border border-white/[0.06] px-3 text-xs text-white outline-none" /><input type="number" min={1} max={21} value={target} onChange={event => setTarget(Number(event.target.value))} aria-label="Количество ритуалов" className="rounded-xl bg-black/20 border border-white/[0.06] px-2 text-xs text-white outline-none" /><button onClick={createGoal} aria-label="Создать цель" className="h-10 rounded-xl bg-white/10 text-white flex items-center justify-center"><Plus className="w-4 h-4" /></button></div>
+          <div className="grid grid-cols-[1fr_64px_40px] gap-2 pt-4">
+            <input
+              value={goalTitle}
+              onChange={event => setGoalTitle(event.target.value)}
+              maxLength={120}
+              aria-label="Название цели"
+              placeholder="Новая цель"
+              className="min-w-0 bg-transparent border-b border-[rgba(242,239,232,0.12)] px-0 py-2 text-[13px] text-[#F2EFE8]/90 outline-none placeholder:text-[#F2EFE8]/25"
+            />
+            <input
+              type="number"
+              min={1}
+              max={21}
+              value={target}
+              onChange={event => setTarget(Number(event.target.value))}
+              aria-label="Количество ритуалов"
+              className="bg-transparent border-b border-[rgba(242,239,232,0.12)] px-0 py-2 text-[13px] text-[#F2EFE8]/90 outline-none"
+            />
+            <button
+              onClick={createGoal}
+              aria-label="Создать цель"
+              className="h-9 rounded-full bg-white/[0.08] text-[#F2EFE8]/70 flex items-center justify-center active:scale-[0.97] transition-transform duration-[160ms]"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+        </GlassSurface>
+      </section>
+
+      {/* Заметки */}
+      <section className="flex flex-col gap-4">
+        <SectionMeta>Заметки</SectionMeta>
+        <p className="font-display text-[22px] font-light text-[#F2EFE8]/80 -mt-2">Что ты заметил сегодня?</p>
+        <div className="flex gap-3">
+          <textarea
+            value={noteBody}
+            onChange={event => setNoteBody(event.target.value)}
+            maxLength={2000}
+            placeholder="Запиши наблюдение..."
+            className="min-h-20 flex-1 resize-none border-b border-[rgba(242,239,232,0.12)] bg-transparent py-3 text-[13px] text-[#F2EFE8]/80 placeholder:text-[#F2EFE8]/25 outline-none"
+          />
+          <button
+            onClick={createNote}
+            aria-label="Сохранить заметку"
+            className="w-10 h-10 rounded-full bg-white/[0.08] text-[#F2EFE8]/70 flex items-center justify-center active:scale-[0.97] transition-transform duration-[160ms]"
+          >
+            <Check className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex flex-col">
+          {notes.slice(0, 5).map(note => (
+            <div key={note.id} className="flex gap-3 items-start border-b border-[rgba(242,239,232,0.12)] py-4">
+              <p className="text-[13px] text-[#F2EFE8]/65 leading-relaxed flex-1">{note.body}</p>
+              <button
+                aria-label="Удалить заметку"
+                onClick={() => { deleteNote(note.id); setNotes(getNotes()); }}
+                className="text-[#F2EFE8]/25 hover:text-[#F2EFE8]/50"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
-        <h3 className="text-sm font-semibold text-white mb-3">Заметки</h3>
-        <div className="flex gap-2"><textarea value={noteBody} onChange={event => setNoteBody(event.target.value)} maxLength={2000} placeholder="Что ты заметил сегодня?" className="min-h-20 flex-1 resize-none rounded-xl bg-black/20 border border-white/[0.06] p-3 text-xs text-white placeholder:text-white/25 outline-none" /><button onClick={createNote} aria-label="Сохранить заметку" className="w-10 rounded-xl bg-white/10 text-white flex items-center justify-center"><Check className="w-4 h-4" /></button></div>
-        <div className="flex flex-col gap-2 mt-3">{notes.slice(0, 5).map(note => <div key={note.id} className="flex gap-3 items-start rounded-xl bg-black/15 p-3"><p className="text-[11px] text-white/65 leading-relaxed flex-1">{note.body}</p><button aria-label="Удалить заметку" onClick={() => { deleteNote(note.id); setNotes(getNotes()); }} className="text-white/25"><Trash2 className="w-3 h-3" /></button></div>)}</div>
+      {/* Достижения — horizontal scroll */}
+      <section className="flex flex-col gap-4">
+        <SectionMeta>Достижения</SectionMeta>
+        <div className="flex gap-5 overflow-x-auto hide-scrollbar pb-2 -mx-1 px-1">
+          {achievements.map(item => (
+            <div key={item.id} className={`w-28 flex-none ${item.unlocked ? '' : 'opacity-40'}`}>
+              <p className="text-[13px] font-medium text-[#F2EFE8]/85">{item.title}</p>
+              <p className="text-[11px] text-[#F2EFE8]/35 mt-1 leading-snug">{item.description}</p>
+              <div className={`mt-3 h-px ${item.unlocked ? 'bg-[#C59A55]/55' : 'bg-[rgba(242,239,232,0.12)]'}`} />
+            </div>
+          ))}
+        </div>
       </section>
-
-      <section><div className="flex items-center gap-2 mb-3 px-1"><Award className="w-4 h-4 text-white/60" /><h3 className="text-sm font-semibold text-white">Мои достижения</h3></div><div className="flex gap-2 overflow-x-auto pb-2">{achievements.map(item => <div key={item.id} className={`w-28 flex-none rounded-2xl border p-3 ${item.unlocked ? 'border-amber-300/20 bg-amber-300/[0.06]' : 'border-white/[0.05] bg-white/[0.02] grayscale opacity-45'}`}><div className="text-2xl mb-2">{item.icon}</div><p className="text-[11px] font-semibold text-white/80">{item.title}</p><p className="text-[9px] text-white/40 mt-1 leading-snug">{item.description}</p></div>)}</div></section>
     </div>
   );
 }

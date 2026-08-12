@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Check } from 'lucide-react';
 
 interface InputPlayerProps {
   color: string;
@@ -101,7 +102,7 @@ export default function InputPlayer({ color, variant = 'goals', practiceName, ho
                   border: `1px solid ${color}40`
                 }}
               >
-                <span className="text-white text-sm">✓</span>
+                <Check className="w-5 h-5 text-white/90" strokeWidth={2} />
               </div>
               <p className="text-base font-light text-white/90">Записано в твой день</p>
               <p className="text-[10px] font-mono tracking-widest text-white/35 uppercase">Мысли зафиксированы</p>

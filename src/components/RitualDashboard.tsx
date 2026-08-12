@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Play, Plus, Edit2, X, Check,
@@ -6,8 +7,8 @@ import {
   ShoppingBag, Smartphone, Lock, ChevronRight, BookOpen, Clock, ArrowLeft, RefreshCw
 } from 'lucide-react';
 import { Practice, UserStats } from '../types';
-import QuickStartCard from './QuickStartCard';
-import RingPurchaseBanner from './RingPurchaseBanner';
+import GlassSurface from './ui/GlassSurface';
+import QuickStartPill from './ui/QuickStartPill';
 import RitualRingAnalytics from './RitualRingAnalytics';
 import ConnectHealthModal from './ConnectHealthModal';
 import SelectModal from './SelectModal';
@@ -15,7 +16,7 @@ import TimePickerModal, { normalizeTime } from './TimePickerModal';
 import { DataSource } from '../services/health/manager';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
-import { ShineBreakdown, calculateShine, getShineLabel, getShineColor } from '../services/health/shine';
+import { ShineBreakdown, calculateShine, getShineLabel, getShineAccentColor } from '../services/health/shine';
 import {
   DailyHealthPoint,
   EMPTY_AVAILABILITY_BY_METRIC,
@@ -30,6 +31,7 @@ import {
 import { notificationService, rescheduleAll } from '../services/notifications';
 import { ARTICLES } from '../data/articles';
 import { requestPrivacySafeSync } from '../services/supabase/privacySync';
+import SilkShaderBackground from './SilkShaderBackground';
 
 interface RitualDashboardProps {
   practices: Practice[];
@@ -41,6 +43,7 @@ interface RitualDashboardProps {
   historyByMetric?: HealthHistoryByMetric;
   availabilityByMetric?: HealthAvailabilityByMetric;
   onRefreshHealth?: () => void | Promise<void>;
+  onHealthOpenChange?: (open: boolean) => void;
 }
 
 interface TimelineSlot {
@@ -67,6 +70,7 @@ export default function RitualDashboard({
   historyByMetric: historyByMetricProp,
   availabilityByMetric: availabilityByMetricProp,
   onRefreshHealth,
+  onHealthOpenChange,
 }: RitualDashboardProps) {
   const shineScore = shine?.total ?? 0;
   const dataQuality = shine?.dataQuality ?? 'none';
@@ -526,24 +530,125 @@ export default function RitualDashboard({
     const key = metricKeyMap[uiKey];
     return key ? historyByMetric[key] || [] : [];
   };
+  const getAvailableMetricPoints = (uiKey: string, limit?: number): DailyHealthPoint[] => {
+    const points = getMetricPoints(uiKey).filter(point => point.status === 'available' && point.value !== null);
+    return typeof limit === 'number' ? points.slice(-limit) : points;
+  };
+  const formatMetricValue = (key: string, value: number, unit: string): string => {
+    if (key === 'sleep') {
+      const hours = Math.floor(value);
+      const minutes = Math.round((value % 1) * 60);
+      return `${hours}ч ${minutes}м`;
+    }
+    if (key === 'activity') return Math.round(value).toLocaleString('ru-RU');
+    if (key === 'oxygen') return `${Math.round(value)}%`;
+    if (key === 'temp') return `${value.toFixed(1)}°C`;
+    if (key === 'resp') return `${value.toFixed(1)} ${unit}`;
+    return `${Math.round(value)} ${unit}`;
+  };
+  const getMetricDelta = (uiKey: string, currentValue: number | null | undefined) => {
+    if (currentValue === null || currentValue === undefined) return null;
+    const previous = getAvailableMetricPoints(uiKey).slice(-2, -1)[0]?.value ?? null;
+    if (previous === null) return null;
+    return currentValue - previous;
+  };
+  const getAverageMetricValue = (uiKey: string, limit = 7): number | null => {
+    const values = getAvailableMetricPoints(uiKey, limit).map(point => point.value as number);
+    if (!values.length) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+  const getSleepInsight = (sleepHours: number | null | undefined, delta: number | null) => {
+    if (sleepHours === null || sleepHours === undefined) return 'Подключите источник здоровья, чтобы Ritual собрал ночной ритм.';
+    if (sleepHours >= 7.5 && (delta ?? 0) >= -0.25) return 'Сон держится в устойчивой зоне восстановления.';
+    if (sleepHours >= 6.5) return 'Ночь близка к норме. Смотрите на тренд, а не на один день.';
+    return 'Сон ниже личной нормы. Сегодня лучше выбрать мягкую нагрузку и вечерний ритуал.';
+  };
   const [healthPage, setHealthPage] = useState(0);
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<'7' | '30' | '90'>('30');
   const [showNarrative, setShowNarrative] = useState(true);
+  const metricRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const metricHrv = healthMetrics.hrv;
   const metricSleep = healthMetrics.sleepHours;
   const metricActivity = healthMetrics.steps;
   const metricPulse = healthMetrics.restingHR;
 
+  const openMetricDetail = (metricKey: string) => {
+    setHealthPage(1);
+    setExpandedMetric(metricKey);
+  };
+
+  useEffect(() => {
+    if (healthPage !== 1 || !expandedMetric) return;
+    const frame = requestAnimationFrame(() => {
+      metricRowRefs.current[expandedMetric]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [healthPage, expandedMetric]);
+
+  const mainSummaryMetrics: Array<{
+    key: string;
+    label: string;
+    val: number | null | undefined;
+    unit: string;
+  }> = [
+    { key: 'sleep', label: 'Сон', val: healthMetrics.sleepHours, unit: 'ч' },
+    { key: 'activity', label: 'Активность', val: healthMetrics.steps, unit: 'шагов' },
+    { key: 'hrv', label: 'ВСР', val: healthMetrics.hrv, unit: 'мс' },
+    { key: 'hr', label: 'ЧСС покоя', val: healthMetrics.restingHR, unit: 'уд/м' },
+  ];
+
+  const formatSummaryValue = (key: string, val: number, unit: string) => {
+    if (key === 'sleep' || unit === 'ч') {
+      return `${Math.floor(val)}ч ${Math.round((val % 1) * 60)}м`;
+    }
+    if (key === 'activity' || unit === 'шагов') return Math.round(val).toLocaleString('ru-RU');
+    return `${Math.round(val)} ${unit}`;
+  };
+
   const [isCycleOpen, setIsCycleOpen] = useState(false);
 
   useEffect(() => {
-    if (isHealthOpen || isCycleOpen) {
-      document.body.style.overflow = 'hidden';
-    }
-    return () => { document.body.style.overflow = ''; };
-  }, [isHealthOpen, isCycleOpen]);
+    onHealthOpenChange?.(isHealthOpen);
+  }, [isHealthOpen, onHealthOpenChange]);
+
+  useEffect(() => {
+    if (!isHealthOpen && !isCycleOpen) return;
+
+    const scrollY = window.scrollY;
+    const { body } = document;
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      overflow: body.style.overflow,
+      width: body.style.width,
+    };
+
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.left = previous.left;
+      body.style.right = previous.right;
+      body.style.overflow = previous.overflow;
+      body.style.width = previous.width;
+      document.documentElement.style.overflow = '';
+      window.scrollTo(0, scrollY);
+    };
+  }, [isHealthOpen, isCycleOpen, isIntentionModalOpen]);
   const [cycleDay, setCycleDay] = useState<number>(12);
   const [cyclePhase, setCyclePhase] = useState<string>('follicular');
   const [isPregnancyMode, setIsPregnancyMode] = useState<boolean>(() => {
@@ -596,7 +701,9 @@ export default function RitualDashboard({
     setSlots(slots.filter(s => s.id !== id));
   };
 
-  const status = { title: getShineLabel(shineScore, dataQuality), color: getShineColor(shineScore, dataQuality) };
+  const accentColor = getShineAccentColor(shine?.state, shineScore, dataQuality);
+  const status = { title: getShineLabel(shineScore, dataQuality), color: accentColor };
+  const hasRingOrHealth = dashboardHasRing || (healthSource && healthSource !== 'none');
 
   const getPracticeIcon = (practice: Practice) => {
     const idLower = practice.id.toLowerCase();
@@ -609,22 +716,7 @@ export default function RitualDashboard({
   };
 
   return (
-    <div className="w-full max-w-md mx-auto flex flex-col gap-7 select-none relative">
-      
-      {/* Page tabs */}
-      <div className="flex items-center gap-4">
-        {['Сегодня', 'Чтение'].map((title, idx) => (
-          <button
-            key={idx}
-            onClick={() => setCurrentPage(idx)}
-            className={`text-[13px] font-semibold transition-colors duration-300 ${
-              currentPage === idx ? 'text-white' : 'text-white/50 hover:text-white/50'
-            }`}
-          >
-            {title}
-          </button>
-        ))}
-      </div>
+    <div className="w-full max-w-md mx-auto flex flex-col select-none relative">
 
       <AnimatePresence mode="wait">
         {currentPage === 0 && (
@@ -633,227 +725,121 @@ export default function RitualDashboard({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="flex flex-col gap-7"
+            transition={{ duration: 0.2 }}
+            className="flex flex-col gap-8"
           >
-            {/* ===== HERO: SHINE SCORE ===== */}
-            <section 
-              onClick={() => setIsHealthOpen(true)}
-              className="relative cursor-pointer rounded-2xl overflow-hidden"
-            >
-              <div className="absolute inset-0">
-                <img 
-                  src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=1200&auto=format&fit=crop"
-                  alt=""
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 bg-gradient-to-b from-[#0a1628]/60 via-[#0a1628]/40 to-[#070709]" />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#070709] via-transparent to-transparent" />
+            {/* ===== AURORA HERO: SHINE ===== */}
+            <section className="relative -mx-5 overflow-hidden">
+              <div className="absolute inset-0 min-h-[400px]" aria-hidden="true">
+                <SilkShaderBackground accentColor={accentColor} />
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#08090A]" />
               </div>
 
-              <div className="relative z-10 flex flex-col items-center pt-10 pb-8 px-6">
-                <span className="text-[11px] tracking-[0.25em] text-white/80 uppercase font-semibold mb-4">Сияние</span>
-
-                <div className="relative w-64 h-36">
-                  <svg className="w-full h-full" viewBox="0 0 200 100">
-                    <path d="M 20 90 A 80 80 0 0 1 180 90" fill="none" stroke="rgba(255,255,255,0.08)" strokeLinecap="round" strokeWidth="1.5" />
+              <button
+                type="button"
+                onClick={() => setIsHealthOpen(true)}
+                aria-label="Открыть Ritual Health"
+                className="relative z-10 w-full flex flex-col items-center px-6 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-10 cursor-pointer transition-transform duration-[160ms] ease-out active:scale-[0.99]"
+              >
+                <div className="relative w-64 h-36 pointer-events-none">
+                  <svg className="w-full h-full" viewBox="0 0 200 100" aria-hidden="true">
+                    <path
+                      d="M 20 90 A 80 80 0 0 1 180 90"
+                      fill="none"
+                      stroke="rgba(242,239,232,0.08)"
+                      strokeLinecap="round"
+                      strokeWidth="1.5"
+                    />
                     {dataQuality !== 'none' && (
-                      <motion.path 
-                        d="M 20 90 A 80 80 0 0 1 180 90" 
-                        fill="none" stroke="rgba(255,255,255,0.85)" strokeLinecap="round" strokeWidth="2"
+                      <motion.path
+                        d="M 20 90 A 80 80 0 0 1 180 90"
+                        fill="none"
+                        stroke={accentColor}
+                        strokeLinecap="round"
+                        strokeWidth="2"
                         initial={{ strokeDasharray: 251, strokeDashoffset: 251 }}
                         animate={{ strokeDashoffset: 251 - (251 * (shineScore / 100)) }}
-                        transition={{ duration: 1.8, ease: [0.16, 1, 0.3, 1] }}
+                        transition={{ duration: 0.85, ease: [0.23, 1, 0.32, 1] }}
                       />
                     )}
-                    <circle cx="20" cy="90" r="2" fill="rgba(255,255,255,0.2)" />
-                    <circle cx="180" cy="90" r="2" fill="rgba(255,255,255,0.2)" />
-                    <text x="16" y="98" fill="rgba(255,255,255,0.15)" fontSize="7" fontFamily="Inter" textAnchor="middle">0</text>
-                    <text x="184" y="98" fill="rgba(255,255,255,0.15)" fontSize="7" fontFamily="Inter" textAnchor="middle">100</text>
                   </svg>
                   <div className="absolute inset-x-0 bottom-0 flex flex-col items-center">
                     {dataQuality !== 'none' ? (
-                      <motion.span 
-                        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.8 }}
-                        className="text-[56px] font-semibold text-white leading-none tracking-tight"
+                      <motion.span
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2, duration: 0.55, ease: [0.23, 1, 0.32, 1] }}
+                        className="text-[88px] font-display font-light text-[#F2EFE8] leading-none tabular-nums"
                       >
                         {shineScore}
                       </motion.span>
                     ) : (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.8 }}
-                        className="flex flex-col items-center gap-1"
-                      >
-                        <span className="text-[20px] font-semibold text-white/40 leading-none">—</span>
-                        <span className="text-[10px] text-white/40">нет данных</span>
-                      </motion.div>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-[32px] font-display font-light text-[#F2EFE8]/35 leading-none">—</span>
+                        <span className="text-[11px] text-[#F2EFE8]/40">нет данных</span>
+                      </div>
                     )}
                   </div>
                 </div>
-
-                <motion.div 
-                  initial={{ opacity: 0 }} 
-                  animate={{ opacity: 1 }} 
-                  transition={{ delay: 1 }} 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openIntentionModal();
-                  }}
-                  className="flex flex-col items-center mt-4 gap-1.5 group cursor-pointer hover:scale-[1.02] transition-all duration-300 relative z-20"
-                >
-                  <span className="text-[10px] text-white/50 uppercase tracking-[0.2em] font-semibold font-sans">
-                    Намерение на день
-                  </span>
-                  <span className="text-[22px] italic font-semibold text-center px-4 animate-fade-in tracking-tight leading-snug" style={{ fontFamily: 'var(--font-display)', color: status.color }}>
-                    {dailyFocus ? `«${dailyFocus}»` : 'Твоё намерение на день'}
-                  </span>
-                  <span className="text-[9px] text-white/45 font-medium group-hover:text-white/70 transition-colors">
-                    {dailyFocus ? 'нажмите, чтобы изменить' : 'нажмите для выбора'}
-                  </span>
-                </motion.div>
-              </div>
+                <p className="mt-1 text-[13px] text-[#F2EFE8]/70 tracking-[0.06em]">Сияние</p>
+                <p className="mt-1 text-[12px] text-[#F2EFE8]/42">{status.title}</p>
+              </button>
             </section>
 
-            {/* ===== EVENING REFLECTION ===== */}
-            {showReflectionCard && (
-              <motion.div
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white/[0.02] border border-white/[0.06] rounded-[24px] p-5 flex flex-col gap-4 text-center backdrop-blur-xl relative overflow-hidden"
-              >
-                {/* Background glow decoration */}
-                <div className="absolute -top-12 -left-12 w-24 h-24 bg-purple-500/10 blur-[30px] rounded-full pointer-events-none" />
-                <div className="absolute -bottom-12 -right-12 w-24 h-24 bg-amber-500/10 blur-[30px] rounded-full pointer-events-none" />
-
-                <div className="flex flex-col gap-1.5 items-center relative z-10">
-                  <div className="w-8 h-8 rounded-full bg-purple-400/10 border border-purple-400/20 flex items-center justify-center text-purple-300 mb-1">
-                    <Heart className="w-4 h-4 fill-purple-300/10" />
-                  </div>
-                  <h4 className="text-[15px] font-semibold text-white tracking-tight leading-snug">
-                    Вечерняя рефлексия
-                  </h4>
-                  <p className="text-[13px] text-white/70 px-2 leading-relaxed">
-                    Удалось ли сегодня возвращаться к своему намерению?
-                  </p>
-                  <p className="text-[12px] italic text-[#e6b85c] font-semibold">
-                    «{dailyFocus}»
-                  </p>
-                </div>
-
-                {reflection.answer === null ? (
-                  <div className="grid grid-cols-3 gap-2 mt-1.5 relative z-10">
-                    <button
-                      onClick={() => handleReflectionAnswer('yes')}
-                      className="py-2.5 px-2 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.08] hover:border-white/[0.12] active:scale-95 transition-all text-xs font-semibold text-white/80"
-                    >
-                      Да
-                    </button>
-                    <button
-                      onClick={() => handleReflectionAnswer('partially')}
-                      className="py-2.5 px-2 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.08] hover:border-white/[0.12] active:scale-95 transition-all text-xs font-semibold text-white/80"
-                    >
-                      Частично
-                    </button>
-                    <button
-                      onClick={() => handleReflectionAnswer('no')}
-                      className="py-2.5 px-2 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.08] hover:border-white/[0.12] active:scale-95 transition-all text-xs font-semibold text-white/80"
-                    >
-                      Не сегодня
-                    </button>
-                  </div>
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="p-4 rounded-xl bg-white/[0.01] border border-white/[0.03] flex flex-col gap-2 items-center text-center mt-1 relative z-10"
-                  >
-                    <p className="text-xs text-emerald-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      Ответ зафиксирован · {
-                        reflection.answer === 'yes' ? 'Да' :
-                        reflection.answer === 'partially' ? 'Частично' : 'Не сегодня'
-                      }
-                    </p>
-                    <p className="text-[13px] text-white/80 leading-relaxed max-w-[280px]">
-                      {reflection.reactionText}
-                    </p>
-                    <span className="text-[9px] text-white/30 font-mono mt-1">
-                      Нейропетля замкнута. Завтра появится новое намерение.
-                    </span>
-                  </motion.div>
-                )}
-              </motion.div>
-            )}
-
-            {/* ===== RING PURCHASE BANNER ===== */}
-            <RingPurchaseBanner
-              source={dashboardHasRing ? 'ring' : (healthSource ?? 'none')}
-              onConnect={handleConnectHealth}
-              onBuyRing={() => window.open('https://ritual.store', '_blank')}
-            />
+            {/* ===== DIRECTION ===== */}
+            <section className="flex flex-col items-center text-center -mt-4 px-2">
+              <h2 className="font-display text-[28px] leading-[1.12] text-[#F2EFE8] text-balance max-w-[320px]">
+                Что ты выбираешь сегодня?
+              </h2>
+            </section>
 
             {/* ===== RECOMMENDATION ===== */}
-            <section className="flex flex-col gap-2.5">
-              <span className="text-[11px] text-white/60 tracking-wider font-semibold px-1">Биометрическая рекомендация</span>
-              <motion.div 
-                onClick={() => onSelectPractice(recommendedPractice)}
-                className="relative cursor-pointer rounded-[20px] overflow-hidden border border-white/[0.06] p-5 flex flex-col justify-between min-h-[170px]"
-                whileHover={{ borderColor: 'rgba(255,255,255,0.12)' }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <div className="absolute inset-0">
-                  <img 
-                    src={
-                      recommendedPractice.id === 'start-day' ? 'https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?q=80&w=600&auto=format&fit=crop' :
-                      recommendedPractice.id === 'calm-down' ? 'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?q=80&w=600&auto=format&fit=crop' :
-                      recommendedPractice.id === 'restore' ? 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?q=80&w=600&auto=format&fit=crop' :
-                      recommendedPractice.id === 'pause' ? 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=600&auto=format&fit=crop' :
-                      'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=600&auto=format&fit=crop'
-                    }
-                    alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d12]/95 via-[#0d0d12]/70 to-[#0d0d12]/30" />
-                </div>
-
-                <div className="relative z-10 flex-1 flex flex-col justify-between gap-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[10px] text-amber-300 font-mono tracking-wider uppercase">АВТОМАТИЧЕСКИЙ ПОДБОР</span>
-                      <h3 className="text-base font-semibold text-white mt-1">{recommendedPractice.title}</h3>
-                    </div>
-                    <div className="w-7 h-7 rounded-full bg-white/15 flex items-center justify-center backdrop-blur-sm">
-                      <Play className="w-2.5 h-2.5 text-white fill-current ml-0.5" />
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-white/70 leading-relaxed max-w-xs font-medium">
-                    {
-                      shineScore === 0 ? 'Подключите датчик или умное кольцо для индивидуального подбора.' : 'Рекомендуемая практика на основе вашего состояния.'
-                    }
-                  </p>
-                </div>
-              </motion.div>
-            </section>
+            <GlassSurface
+              as="button"
+              onClick={() => {
+                if (!hasRingOrHealth && shineScore === 0) {
+                  window.open('https://ritual.store', '_blank');
+                  return;
+                }
+                onSelectPractice(recommendedPractice);
+              }}
+              className="p-5 flex items-center justify-between gap-4 min-h-[96px]"
+            >
+              <div className="flex flex-col items-start gap-1.5 min-w-0">
+                <span className="text-[13px] text-[#F2EFE8]/45">Рекомендация</span>
+                <span className="text-[20px] font-display text-[#F2EFE8] leading-tight text-left">
+                  {!hasRingOrHealth && shineScore === 0
+                    ? 'Полный опыт с Ritual Core'
+                    : recommendedPractice.title}
+                </span>
+                {!hasRingOrHealth && shineScore === 0 && (
+                  <span className="text-[12px] text-[#F2EFE8]/40 text-left leading-relaxed">
+                    Умное кольцо точнее считывает состояние
+                  </span>
+                )}
+              </div>
+              <div className="w-10 h-10 rounded-full bg-white/10 border border-white/10 flex items-center justify-center flex-shrink-0">
+                <Play className="w-4 h-4 text-[#F2EFE8] fill-current ml-0.5" />
+              </div>
+            </GlassSurface>
 
             {/* ===== QUICK START ===== */}
-            <section className="flex flex-col gap-2.5">
-              <span className="text-[11px] text-white/60 tracking-wider font-semibold px-1">Быстрый старт</span>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x snap-mandatory px-1">
-                {practices.map((p) => (
-                  <div key={p.id} className="snap-start flex-shrink-0">
-                    <QuickStartCard 
-                      practice={p} 
-                      onClick={() => onSelectPractice(p)} 
+            <section>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 hide-scrollbar snap-x snap-mandatory -mx-1 px-1">
+                {practices.map((practice, index) => (
+                  <div key={practice.id} className="snap-start flex-shrink-0">
+                    <QuickStartPill
+                      practice={practice}
+                      index={index}
+                      onClick={() => onSelectPractice(practice)}
                     />
                   </div>
                 ))}
               </div>
             </section>
 
-            {/* ===== DAILY FLOW (ТЕЧЕНИЕ ДНЯ) ===== */}
-            <section className="flex flex-col gap-2.5">
-              <span className="text-[11px] text-white/60 tracking-wider font-semibold px-1">Течение дня</span>
+            {/* ===== DAILY FLOW ===== */}
+            <section className="flex flex-col gap-3">
               <motion.div layout className="relative flex flex-col gap-1.5">
                 {(() => {
                   const visibleSlots = slots
@@ -1122,10 +1108,10 @@ export default function RitualDashboard({
                     }`}
                   >
                     <div className="flex items-center gap-4 min-w-0">
-                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl transition-all duration-300 ${
-                        isCompleted ? 'bg-[#E6B85C]/10 border border-[#E6B85C]/20' : 'bg-white/[0.03] border border-white/[0.05]'
+                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-[11px] font-medium uppercase tracking-wider transition-all duration-300 ${
+                        isCompleted ? 'bg-[#E6B85C]/10 border border-[#E6B85C]/20 text-[#E6B85C]/80' : 'bg-white/[0.03] border border-white/[0.05] text-white/45'
                       }`}>
-                        {art.emoji}
+                        {art.category.slice(0, 2)}
                       </div>
                       <div className="flex flex-col min-w-0 gap-0.5">
                         <div className="flex items-center gap-2">
@@ -1168,162 +1154,188 @@ export default function RitualDashboard({
       </AnimatePresence>
 
       {/* ===== FULL HEALTH MODAL ===== */}
-      <AnimatePresence>
-        {isHealthOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-[#070709]/98 backdrop-blur-2xl flex flex-col">
-            <header className="flex flex-col gap-3 w-full max-w-md mx-auto px-5 pt-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-white/60 uppercase tracking-wider">Здоровье</span>
-                <button onClick={() => { setIsHealthOpen(false); setExpandedMetric(null); }} className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
-                  <X className="w-4 h-4 text-white/40" />
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isHealthOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] bg-[#08090A] flex flex-col overscroll-none"
+            >
+            <header className="w-full max-w-md mx-auto px-5 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 flex flex-col gap-4">
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  aria-label="Закрыть"
+                  onClick={() => { setIsHealthOpen(false); setExpandedMetric(null); }}
+                  className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center active:scale-[0.97] transition-transform duration-[160ms]"
+                >
+                  <X className="w-4 h-4 text-[#F2EFE8]/50" />
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-1 bg-white/[0.03] p-0.5 rounded-xl">
-                {['Обзор', 'Показатели', 'Тренды'].map((label, idx) => (
-                  <button key={idx} onClick={() => setHealthPage(idx)} className={`py-1.5 rounded-lg text-[10px] transition-all ${healthPage === idx ? 'bg-white/10 text-white/90 font-medium' : 'text-white/60 hover:text-white/50'}`}>
+              <GlassSurface className="p-1 grid grid-cols-3 gap-1">
+                {['Главное', 'Здоровье', 'Аналитика'].map((label, idx) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setHealthPage(idx)}
+                    className={`py-2.5 rounded-[18px] text-[13px] font-medium transition-colors duration-[160ms] ease-out ${
+                      healthPage === idx
+                        ? 'bg-white/[0.10] text-[#F2EFE8]/92'
+                        : 'text-[#F2EFE8]/42 hover:text-[#F2EFE8]/60'
+                    }`}
+                  >
                     {label}
                   </button>
                 ))}
-              </div>
+              </GlassSurface>
             </header>
 
-            <main className="flex-1 w-full max-w-md mx-auto pt-5 pb-20 overflow-y-auto hide-scrollbar px-5">
-              <AnimatePresence mode="wait">
+            <main className="relative flex-1 w-full max-w-md mx-auto pt-2 pb-20 overflow-y-auto hide-scrollbar px-5">
+              <AnimatePresence initial={false}>
                 {/* TAB: Обзор */}
                 {healthPage === 0 && (
-                  <motion.div key="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-6 items-center text-center">
-                    <div className="flex flex-col items-center">
-                      <span className="text-[10px] text-white/60 py-1 px-3 rounded-full border border-white/[0.06]">{dailyFocus ? `«${dailyFocus}»` : status.title}</span>
+                  <motion.div
+                    key="overview"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 8 }}
+                    transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+                    className="flex flex-col gap-6"
+                  >
+                    <div className="flex flex-col items-center text-center pt-2">
+                      <span
+                        className="text-[13px] py-1.5 px-4 rounded-full border border-white/10 text-[#F2EFE8]/70"
+                        style={{ borderColor: `${accentColor}44`, color: accentColor }}
+                      >
+                        {dailyFocus ? `«${dailyFocus}»` : status.title}
+                      </span>
                       {dataQuality !== 'none' ? (
                         <>
-                          <h3 className="text-5xl font-semibold text-white/90 mt-4">{shineScore}%</h3>
-                          <span className="text-[10px] text-white/50 mt-1">Индекс Сияния</span>
-                          <span className="text-[9px] text-white/15 mt-0.5">
-                            {dataQuality === 'full' ? 'Полный набор данных' : 
+                          <span
+                            className="font-display text-[88px] font-light leading-none tabular-nums mt-6"
+                            style={{ color: accentColor }}
+                          >
+                            {shineScore}
+                          </span>
+                          <span className="text-[13px] text-[#F2EFE8]/70 mt-2">Сияние</span>
+                          <span className="text-[13px] text-[#F2EFE8]/42 mt-1">
+                            {dataQuality === 'full' ? 'Полный набор данных' :
                              dataQuality === 'partial' ? 'Частичные данные' : 'Минимальные данные'}
                           </span>
                         </>
                       ) : (
                         <>
-                          <h3 className="text-5xl font-semibold text-white/40 mt-4">—</h3>
-                          <span className="text-[10px] text-white/50 mt-1">Индекс Сияния</span>
-                          <span className="text-[9px] text-white/15 mt-0.5">Подключите данные для расчёта</span>
+                          <span className="font-display text-[88px] font-light leading-none text-[#F2EFE8]/35 mt-6">—</span>
+                          <span className="text-[13px] text-[#F2EFE8]/70 mt-2">Сияние</span>
+                          <span className="text-[13px] text-[#F2EFE8]/42 mt-1">Подключите данные для расчёта</span>
                         </>
                       )}
                     </div>
 
-                    <div className="flex bg-white/[0.03] p-0.5 rounded-full text-xs w-full max-w-[240px]">
-                      <button onClick={() => setShowNarrative(true)} className={`flex-1 py-1.5 rounded-full text-[10px] transition-all ${showNarrative ? 'bg-white/10 text-white/90 font-medium' : 'text-white/60'}`}>Нарратив</button>
-                      <button onClick={() => setShowNarrative(false)} className={`flex-1 py-1.5 rounded-full text-[10px] transition-all ${!showNarrative ? 'bg-white/10 text-white/90 font-medium' : 'text-white/60'}`}>Статистика</button>
-                    </div>
+                    <GlassSurface className="p-1 flex w-full max-w-[280px] mx-auto">
+                      <button
+                        type="button"
+                        onClick={() => setShowNarrative(true)}
+                        className={`flex-1 py-2 rounded-[18px] text-[13px] font-medium transition-colors duration-[160ms] ${showNarrative ? 'bg-white/[0.10] text-[#F2EFE8]/92' : 'text-[#F2EFE8]/42'}`}
+                      >
+                        Нарратив
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowNarrative(false)}
+                        className={`flex-1 py-2 rounded-[18px] text-[13px] font-medium transition-colors duration-[160ms] ${!showNarrative ? 'bg-white/[0.10] text-[#F2EFE8]/92' : 'text-[#F2EFE8]/42'}`}
+                      >
+                        Статистика
+                      </button>
+                    </GlassSurface>
 
                     {healthSource === 'none' && !dashboardHasRing && (
-                      <div className="rounded-2xl border border-[#e8e0d4]/[0.12] bg-[#e8e0d4]/[0.04] p-5 text-left w-full">
+                      <GlassSurface className="p-5 text-left w-full">
                         <div className="flex items-center gap-2.5 mb-3">
-                          <div className="w-8 h-8 rounded-lg bg-[#e8e0d4]/[0.08] flex items-center justify-center">
-                            <ShoppingBag className="w-4 h-4 text-[#e8e0d4]/60" />
+                          <div className="w-8 h-8 rounded-xl bg-white/[0.06] flex items-center justify-center">
+                            <ShoppingBag className="w-4 h-4 text-[#F2EFE8]/50" />
                           </div>
-                          <span className="text-xs font-medium text-[#e8e0d4]/80">Данные здоровья</span>
+                          <span className="text-[15px] font-medium text-[#F2EFE8]/90">Данные здоровья</span>
                         </div>
-                        <p className="text-[11px] text-white/35 leading-relaxed mb-4">
-                          Подключите приложение здоровья (Apple Health / Google Health Connect) или приобретите кольцо Ritual для автоматического расчёта Индекса Сияния.
+                        <p className="text-[13px] text-[#F2EFE8]/42 leading-relaxed mb-4">
+                          Подключите Apple Health / Health Connect или Ritual Core для расчёта Сияния.
                         </p>
-                        <div className="flex flex-col gap-2">
-                          <div className="flex gap-2">
-                            <button onClick={handleConnectHealth} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/[0.06] border border-white/[0.06] text-[11px] text-white/60">
-                              <Smartphone className="w-3.5 h-3.5" />
-                              Подключить
-                            </button>
-                            <button onClick={() => window.open('https://ritual.store', '_blank')} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#e8e0d4]/[0.1] border border-[#e8e0d4]/[0.15] text-[11px] text-[#e8e0d4]/80 font-medium">
-                              <ShoppingBag className="w-3.5 h-3.5" />
-                              Купить кольцо
-                            </button>
-                          </div>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={handleConnectHealth} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-[13px] text-[#F2EFE8]/70 active:scale-[0.97] transition-transform">
+                            <Smartphone className="w-3.5 h-3.5" />
+                            Подключить
+                          </button>
+                          <button type="button" onClick={() => window.open('https://ritual.store', '_blank')} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#C59A55]/10 border border-[#C59A55]/20 text-[13px] text-[#C59A55] active:scale-[0.97] transition-transform">
+                            <ShoppingBag className="w-3.5 h-3.5" />
+                            Ritual Core
+                          </button>
                         </div>
-                      </div>
+                      </GlassSurface>
                     )}
 
                     {showNarrative ? (
                       <>
                         {/* ===== INTENTION BLOCK ===== */}
-                        <div 
-                          onClick={() => {
-                            if (!isFocusLockedToday) {
-                              openIntentionModal();
-                            }
-                          }}
-                          className={`bg-white/[0.02] border border-white/[0.04] rounded-2xl p-5 text-left w-full flex flex-col gap-3 transition-colors ${!isFocusLockedToday ? 'cursor-pointer hover:bg-white/[0.04] hover:border-white/[0.08]' : ''}`}
+                        <GlassSurface
+                          onClick={() => { if (!isFocusLockedToday) openIntentionModal(); }}
+                          className={`p-5 text-left w-full flex flex-col gap-3 ${!isFocusLockedToday ? 'cursor-pointer active:scale-[0.99] transition-transform duration-[160ms]' : ''}`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-white/50 uppercase tracking-wider block font-mono">Намерение дня</span>
+                            <span className="text-[13px] text-[#F2EFE8]/42">Намерение дня</span>
                             {!isFocusLockedToday ? (
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openIntentionModal();
-                                }}
-                                className="flex items-center gap-1 py-1 px-2.5 rounded-full bg-white/[0.04] border border-white/[0.06] text-[9px] text-white/55 hover:text-white hover:bg-white/[0.08] hover:border-white/[0.12] transition-all font-mono"
-                                title="Выбрать или написать намерение"
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); openIntentionModal(); }}
+                                className="text-[13px] text-[#F2EFE8]/50 hover:text-[#F2EFE8]/70"
                               >
-                                <Sparkles className="w-3 h-3 text-amber-300 mr-0.5" />
-                                <span>Выбрать</span>
+                                Изменить
                               </button>
                             ) : (
-                              <div className="flex items-center gap-1 py-1 px-2.5 rounded-full bg-white/[0.02] border border-white/[0.02] text-[9px] text-white/30 font-mono">
-                                <Lock className="w-2.5 h-2.5 text-white/20 mr-0.5" />
-                                <span>Выбрано на сегодня</span>
-                              </div>
+                              <span className="text-[11px] text-[#F2EFE8]/30 flex items-center gap-1">
+                                <Lock className="w-3 h-3" /> Зафиксировано
+                              </span>
                             )}
                           </div>
-                          
-                          <div className="text-sm text-white/85 flex items-center justify-between gap-2 transition-colors font-medium">
-                            <span className="italic">«{dailyFocus || 'Твоё намерение на день'}»</span>
-                            {!isFocusLockedToday ? (
-                              <Edit2 className="w-3.5 h-3.5 text-white/20 hover:text-white/40 flex-shrink-0" />
-                            ) : (
-                              <Lock className="w-3.5 h-3.5 text-white/10 flex-shrink-0" />
-                            )}
-                          </div>
-
+                          <p className="font-display text-[22px] font-light text-[#F2EFE8]/90 italic leading-snug">
+                            «{dailyFocus || 'Твоё намерение на день'}»
+                          </p>
                           {isFocusLockedToday && (
-                            <span className="text-[9px] text-white/35 font-mono uppercase tracking-[0.1em]">
-                              Следующий выбор будет доступен завтра после 24:00
-                            </span>
+                            <span className="text-[11px] text-[#F2EFE8]/30">Следующий выбор — завтра</span>
                           )}
-                        </div>
+                        </GlassSurface>
 
-                        <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-5 text-left w-full">
-                          <span className="text-[10px] text-white/50 uppercase tracking-wider block mb-3">Персональный нарратив</span>
-                        
-                        {/* Cycle / Pregnancy toggle for non-male */}
-                        <div className="flex justify-end mb-3">
-                          {userGender !== 'male' ? (
-                            <button onClick={() => setIsCycleOpen(true)} className="flex items-center gap-1.5 py-1 px-2.5 rounded-full bg-white/[0.04] border border-white/[0.04] text-[10px] text-white/40">
-                              {isPregnancyMode ? 'Беременность' : 'Женский цикл'}
-                            </button>
-                          ) : (
-                            <span className="text-[9px] text-white/40 uppercase tracking-wider">Мужской профиль</span>
-                          )}
-                        </div>
-
-                        <div className="space-y-3 text-sm font-normal text-white/70 leading-relaxed">
+                        <GlassSurface className="p-5 text-left w-full">
+                          <div className="flex justify-between items-center mb-4">
+                            <span className="text-[13px] text-[#F2EFE8]/42">Персональный нарратив</span>
+                            {userGender !== 'male' && (
+                              <button type="button" onClick={() => setIsCycleOpen(true)} className="text-[13px] text-[#F2EFE8]/50 hover:text-[#F2EFE8]/70 flex items-center gap-1">
+                                {isPregnancyMode ? 'Беременность' : 'Женский цикл'}
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-3 text-[15px] text-[#F2EFE8]/70 leading-relaxed">
                           {userGender === 'male' ? (
                             <>
-                              <p className="text-[#6ee7b7] text-xs font-medium">Циркадный ритм · Стабильный тонус</p>
+                              <p className="text-[13px] font-medium" style={{ color: accentColor }}>Циркадный ритм · Стабильный тонус</p>
                               <p>Суточный баланс кортизола и testosterone в оптимальных границах. Утренний пик завершился гармонично.</p>
                               <p>Ночной сон {healthMetrics.sleepHours !== null ? `${Math.floor(healthMetrics.sleepHours)} ч ${Math.round((healthMetrics.sleepHours % 1) * 60)} мин` : 'данные недоступны'}. ВСР {healthMetrics.hrv !== null ? `${metricHrv} мс` : 'данные недоступны'}{healthMetrics.hrv !== null ? ' — высокая адаптивность' : ''}.</p>
-                              <p className="text-white/50">Рекомендация: вечерний ритуал «Тишина» или дыхательная сессия.</p>
+                              <p className="text-[13px] text-[#F2EFE8]/42">Рекомендация: вечерний ритуал «Тишина» или дыхательная сессия.</p>
                             </>
                           ) : isPregnancyMode ? (
                             <>
-                              <p className="text-amber-300/80 text-xs font-medium">Режим «Беременность» · Второй триместр</p>
+                              <p className="text-[13px] font-medium text-[#C59A55]/90">Режим «Беременность» · Второй триместр</p>
                               <p>Твой организм адаптируется. Гормональный фон выравнивается, самочувствие улучшается.</p>
                               <p>Ночью сон {healthMetrics.sleepHours !== null ? `${Math.floor(healthMetrics.sleepHours)} ч ${Math.round((healthMetrics.sleepHours % 1) * 60)} мин` : 'данные недоступны'}. Пульс покоя {healthMetrics.restingHR !== null ? `${metricPulse} уд/мин` : 'данные недоступны'}{healthMetrics.restingHR !== null ? ' — естественный сдвиг' : ''}.</p>
-                              <p className="text-white/50">Рекомендация: «Сканирование тела» или «Точка спокойствия».</p>
+                              <p className="text-[13px] text-[#F2EFE8]/42">Рекомендация: «Сканирование тела» или «Точка спокойствия».</p>
                             </>
                           ) : (
                             <>
-                              <p className="text-[#93c5fd] text-xs font-medium">{cyclePhase === 'follicular' ? 'Фолликулярная фаза' : cyclePhase === 'luteal' ? 'Лютеиновая фаза' : cyclePhase === 'ovulatory' ? 'Овуляторная фаза' : 'Менструальная фаза'}, {cycleDay}-й день</p>
+                              <p className="text-[13px] font-medium" style={{ color: accentColor }}>
+                                {cyclePhase === 'follicular' ? 'Фолликулярная фаза' : cyclePhase === 'luteal' ? 'Лютеиновая фаза' : cyclePhase === 'ovulatory' ? 'Овуляторная фаза' : 'Менструальная фаза'}, {cycleDay}-й день
+                              </p>
                               <p>
                                 {cyclePhase === 'follicular' ? 'Эстроген растёт. Растут энергия и ясность ума.'
                                   : cyclePhase === 'luteal' ? 'Прогестерон перестраивает организм на сохранение энергии.'
@@ -1331,22 +1343,52 @@ export default function RitualDashboard({
                                   : 'Эстроген и прогестерон на минимуме. Организм занят обновлением.'}
                               </p>
                               <p>Ночью сон {healthMetrics.sleepHours !== null ? `${Math.floor(healthMetrics.sleepHours)} ч ${Math.round((healthMetrics.sleepHours % 1) * 60)} мин` : 'данные недоступны'}. ВСР стабильна на {healthMetrics.hrv !== null ? `${metricHrv} мс` : 'данные недоступны'}.</p>
-                              <p className="text-white/50">Рекомендация: {cyclePhase === 'follicular' ? '«Утреннее пробуждение» или «Квадратное дыхание».' : cyclePhase === 'luteal' ? 'Мягкие ритуалы «Тишины» и «Дыхание 4-7-8».' : cyclePhase === 'ovulatory' ? 'Отличное время для активных ритуалов.' : 'Лёгкие ритуалы: «Самосострадание» или «Точка спокойствия».'}</p>
+                              <p className="text-[13px] text-[#F2EFE8]/42">Рекомендация: {cyclePhase === 'follicular' ? '«Утреннее пробуждение» или «Квадратное дыхание».' : cyclePhase === 'luteal' ? 'Мягкие ритуалы «Тишины» и «Дыхание 4-7-8».' : cyclePhase === 'ovulatory' ? 'Отличное время для активных ритуалов.' : 'Лёгкие ритуалы: «Самосострадание» или «Точка спокойствия».'}</p>
                             </>
                           )}
                         </div>
-                      </div>
+                        </GlassSurface>
+
+                        {/* JCRing-style summary rows — tap opens metric on Здоровье */}
+                        <div className="flex flex-col w-full">
+                          {mainSummaryMetrics.map((item) => {
+                            const hasData = item.val !== null && item.val !== undefined;
+                            return (
+                              <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => {
+                                  if (hasData) openMetricDetail(item.key);
+                                  else handleConnectHealth();
+                                }}
+                                className="flex items-center justify-between py-4 border-b border-[rgba(242,239,232,0.12)] last:border-0 text-left active:scale-[0.99] transition-transform duration-[160ms]"
+                              >
+                                <span className="text-[13px] text-[#F2EFE8]/42">{item.label}</span>
+                                <span className="flex items-center gap-2">
+                                  {hasData ? (
+                                    <span className="font-display text-[22px] font-light text-[#F2EFE8]/90 tabular-nums">
+                                      {formatSummaryValue(item.key, item.val as number, item.unit)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[13px] text-[#F2EFE8]/30">—</span>
+                                  )}
+                                  <ChevronRight className="w-4 h-4 text-[#F2EFE8]/25" />
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                     </>
                   ) : (
-                      <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-5 text-left w-full">
-                        <span className="text-[10px] text-white/50 uppercase tracking-wider block mb-4">Сравнение за 7 дней</span>
+                      <GlassSurface className="p-5 text-left w-full">
+                        <span className="text-[13px] text-[#F2EFE8]/42 block mb-4">Драйверы за 7 дней</span>
                         <div className="flex flex-col gap-3">
                           {[
-                            { label: 'Вариабельность (ВСР)', val: healthMetrics.hrv, unit: 'мс', avg: 48, color: '#6ee7b7' },
-                            { label: 'Качество сна', val: healthMetrics.sleepHours, unit: 'ч', avg: 7.1, color: '#a78bfa' },
-                            { label: 'Дневная активность', val: healthMetrics.steps, unit: 'шагов', avg: 8000, color: '#e8e0d4' },
-                            { label: 'Пульс покоя', val: healthMetrics.restingHR, unit: 'уд/м', avg: 65, color: '#fca5a5' }
-                          ].map((item, idx) => {
+                            { key: 'hrv', label: 'Вариабельность (ВСР)', val: healthMetrics.hrv, unit: 'мс', avg: 48, color: '#6ee7b7' },
+                            { key: 'sleep', label: 'Качество сна', val: healthMetrics.sleepHours, unit: 'ч', avg: 7.1, color: '#a78bfa' },
+                            { key: 'activity', label: 'Дневная активность', val: healthMetrics.steps, unit: 'шагов', avg: 8000, color: '#e8e0d4' },
+                            { key: 'hr', label: 'Пульс покоя', val: healthMetrics.restingHR, unit: 'уд/м', avg: 65, color: '#fca5a5' }
+                          ].map((item) => {
                             const hasData = item.val !== null && item.val !== undefined;
                             const pct = hasData ? Math.min(100, Math.round((item.val! / item.avg) * 85)) : 0;
                             const formatted = hasData
@@ -1357,91 +1399,110 @@ export default function RitualDashboard({
                                   : `${item.val} ${item.unit}`
                               : null;
                             return (
-                              <div key={idx} className="flex flex-col gap-1.5 pb-3 last:border-0 last:pb-0 border-b border-white/[0.04]">
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-white/50">{item.label}</span>
-                                  {hasData ? (
-                                    <div className="flex gap-2 text-[11px]">
-                                      <span className="text-white/70">{formatted}</span>
-                                      <span className="text-white/15">/ {item.avg.toLocaleString()} {item.unit}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-[10px] text-white/40 flex items-center gap-1">
-                                      <Lock className="w-2.5 h-2.5" />
-                                      Нет данных
-                                    </span>
-                                  )}
+                              <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => {
+                                  if (hasData) openMetricDetail(item.key);
+                                  else handleConnectHealth();
+                                }}
+                                className="flex flex-col gap-2 py-3 border-b border-[rgba(242,239,232,0.12)] last:border-0 text-left active:scale-[0.99] transition-transform duration-[160ms]"
+                              >
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[13px] text-[#F2EFE8]/42">{item.label}</span>
+                                  <span className="flex items-center gap-2">
+                                    {hasData ? (
+                                      <span className="font-display text-xl font-light text-[#F2EFE8]/90 tabular-nums">{formatted}</span>
+                                    ) : (
+                                      <span className="text-[13px] text-[#F2EFE8]/30 flex items-center gap-1">
+                                        <Lock className="w-3 h-3" /> Нет данных
+                                      </span>
+                                    )}
+                                    <ChevronRight className="w-3.5 h-3.5 text-[#F2EFE8]/25" />
+                                  </span>
                                 </div>
                                 {hasData && (
-                                  <div className="w-full h-0.5 bg-white/[0.04] rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: item.color, opacity: 0.5 }} />
+                                  <div className="h-px bg-[rgba(242,239,232,0.08)] overflow-hidden">
+                                    <div className="h-px transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: item.color, opacity: 0.7 }} />
                                   </div>
                                 )}
-                              </div>
+                              </button>
                             );
                           })}
                         </div>
 
                         {dataQuality !== 'none' && (
-                          <div className="mt-4 pt-4 border-t border-white/[0.04]">
-                            <span className="text-[10px] text-white/50 uppercase tracking-wider block mb-3">Вклад в Сияние</span>
-                            <div className="flex flex-col gap-2">
+                          <div className="mt-4 pt-4 border-t border-[rgba(242,239,232,0.12)]">
+                            <span className="text-[13px] text-[#F2EFE8]/42 block mb-3">Вклад в Сияние</span>
+                            <div className="flex flex-col gap-3">
                               {[
-                                { label: 'ВСР', score: shine?.hrv ?? 0, weight: '30%', color: '#6ee7b7' },
-                                { label: 'Сон', score: shine?.sleep ?? 0, weight: '25%', color: '#a78bfa' },
-                                { label: 'Активность', score: shine?.activity ?? 0, weight: '25%', color: '#e8e0d4' },
-                                { label: 'Пульс', score: shine?.restingHR ?? 0, weight: '20%', color: '#fca5a5' },
-                              ].map((item, idx) => (
-                                <div key={idx} className="flex items-center gap-2">
-                                  <span className="text-[10px] text-white/40 w-20">{item.label}</span>
-                                  <div className="flex-1 h-1 bg-white/[0.04] rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full" style={{ width: `${item.score}%`, backgroundColor: item.color, opacity: 0.6 }} />
+                                { key: 'hrv', label: 'ВСР', score: shine?.hrv ?? 0, weight: '30%' },
+                                { key: 'sleep', label: 'Сон', score: shine?.sleep ?? 0, weight: '25%' },
+                                { key: 'activity', label: 'Активность', score: shine?.activity ?? 0, weight: '25%' },
+                                { key: 'hr', label: 'Пульс', score: shine?.restingHR ?? 0, weight: '20%' },
+                              ].map((item) => (
+                                <button
+                                  key={item.key}
+                                  type="button"
+                                  onClick={() => openMetricDetail(item.key)}
+                                  className="flex items-center gap-3 w-full text-left active:opacity-80"
+                                >
+                                  <span className="text-[13px] text-[#F2EFE8]/42 w-24">{item.label}</span>
+                                  <div className="flex-1 h-px bg-[rgba(242,239,232,0.08)] overflow-hidden">
+                                    <div className="h-px transition-all" style={{ width: `${item.score}%`, backgroundColor: accentColor, opacity: 0.75 }} />
                                   </div>
-                                  <span className="text-[10px] text-white/60 w-8 text-right">{item.score}</span>
-                                  <span className="text-[9px] text-white/15 w-6">{item.weight}</span>
-                                </div>
+                                  <span className="text-[13px] text-[#F2EFE8]/70 w-8 text-right tabular-nums">{item.score}</span>
+                                  <span className="text-[11px] text-[#F2EFE8]/30 w-8">{item.weight}</span>
+                                </button>
                               ))}
                             </div>
                           </div>
                         )}
-                      </div>
+                      </GlassSurface>
                     )}
                   </motion.div>
                 )}
 
                 {/* TAB: Показатели */}
                 {healthPage === 1 && (
-                  <motion.div key="metrics" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4 className="text-sm font-normal text-white/60">Показатели</h4>
-                    </div>
-
-                    {dashboardHasRing && <RitualRingAnalytics />}
-
-                    {healthSource === 'none' && !dashboardHasRing && (
-                      <div className="rounded-2xl border border-[#e8e0d4]/[0.12] bg-[#e8e0d4]/[0.04] p-5 flex flex-col gap-3 mb-2">
-                        <div className="flex items-center gap-2.5">
-                          <Lock className="w-5 h-5 text-[#e8e0d4]/50" />
-                          <span className="text-[13px] font-medium text-[#e8e0d4]/80">Данные недоступны</span>
-                        </div>
-                        <p className="text-[11px] text-white/70 leading-relaxed">
-                          Подключите приложение здоровья или кольцо Ritual для автоматического отслеживания показателей.
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button onClick={handleConnectHealth} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/[0.06] border border-white/[0.08] text-[11px] font-medium text-white/70 hover:bg-white/[0.10] transition-all">
-                            <Smartphone className="w-3.5 h-3.5" />
-                            Подключить
-                          </button>
-                          <button onClick={() => window.open('https://ritual.store', '_blank')} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-amber-400/10 border border-amber-400/20 text-[11px] font-medium text-amber-300 hover:bg-amber-400/15 transition-all">
-                            <ShoppingBag className="w-3.5 h-3.5" />
-                            Купить кольцо
-                          </button>
-                        </div>
+                  <motion.div
+                    key="metrics"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 8 }}
+                    transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+                    className="flex flex-col"
+                  >
+                    {dashboardHasRing && (
+                      <div className="mb-4">
+                        <RitualRingAnalytics />
                       </div>
                     )}
 
+                    {healthSource === 'none' && !dashboardHasRing && (
+                      <GlassSurface className="p-5 flex flex-col gap-3 mb-4">
+                        <div className="flex items-center gap-2.5">
+                          <Lock className="w-5 h-5 text-[#F2EFE8]/35" />
+                          <span className="text-[15px] font-medium text-[#F2EFE8]/90">Данные недоступны</span>
+                        </div>
+                        <p className="text-[13px] text-[#F2EFE8]/42 leading-relaxed">
+                          Подключите приложение здоровья или Ritual Core для отслеживания показателей.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={handleConnectHealth} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-[13px] text-[#F2EFE8]/70">
+                            <Smartphone className="w-3.5 h-3.5" />
+                            Подключить
+                          </button>
+                          <button type="button" onClick={() => window.open('https://ritual.store', '_blank')} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#C59A55]/10 border border-[#C59A55]/20 text-[13px] text-[#C59A55]">
+                            <ShoppingBag className="w-3.5 h-3.5" />
+                            Ritual Core
+                          </button>
+                        </div>
+                      </GlassSurface>
+                    )}
+
                     {[
-                      { key: 'sleep', title: 'Сон', rawVal: healthMetrics.sleepHours, icon: Moon, unit: 'ч', baseline: 7.1, insight: 'Твой сон стабилен. Глубокие фазы в норме.', color: '#a78bfa' },
+                      { key: 'sleep', title: 'Сон', rawVal: healthMetrics.sleepHours, icon: Moon, unit: 'ч', baseline: 7.1, insight: 'Твой сон стабилен. Глубокие фазы в норме.', color: '#9fb7ff' },
                       { key: 'hrv', title: 'ВСР (Покой)', rawVal: healthMetrics.hrv, icon: Activity, unit: 'мс', baseline: 48, insight: 'Ключевой драйвер самочувствия. Высокая вариабельность = отличная кардиорегуляция.', color: '#6ee7b7' },
                       { key: 'hr', title: 'Пульс покоя', rawVal: healthMetrics.restingHR, icon: Heart, unit: 'уд/м', baseline: 65, insight: 'Пульс снижается — сердце разгружается.', inverted: true, color: '#fca5a5' },
                       { key: 'activity', title: 'Активность', rawVal: healthMetrics.steps, icon: Zap, unit: 'шагов', baseline: 8000, insight: (healthMetrics.steps ?? 0) >= 8000 ? 'Дневная норма выполнена.' : 'Продолжай накапливать активность.', color: '#fcd34d' },
@@ -1449,28 +1510,26 @@ export default function RitualDashboard({
                       { key: 'oxygen', title: 'SpO₂', rawVal: healthMetrics.spo2, icon: Eye, unit: '%', baseline: 97, insight: 'Идеальное насыщение крови кислородом.', color: '#2dd4bf' },
                       { key: 'temp', title: 'Температура', rawVal: healthMetrics.temperature, icon: Thermometer, unit: '°C', baseline: 36.4, insight: 'Терморегуляция спокойна.', color: '#f87171' },
                     ].map((metric) => {
-                      const MIcon = metric.icon;
                       const isExpanded = expandedMetric === metric.key;
                       const hasData = metric.rawVal !== null && metric.rawVal !== undefined;
                       const val = metric.rawVal;
                       const healthMetricKey = metricKeyMap[metric.key];
                       const availability = healthMetricKey ? availabilityByMetric[healthMetricKey] : 'unavailable';
 
-                      const formattedVal = hasData
-                        ? metric.key === 'sleep'
-                          ? `${Math.floor(val!)}ч ${Math.round((val! % 1) * 60)}м`
-                          : metric.key === 'activity'
-                            ? val!.toLocaleString()
-                            : metric.key === 'oxygen'
-                              ? `${val}%`
-                              : metric.key === 'temp'
-                                ? `${val} °C`
-                                : `${val} ${metric.unit}`
-                        : null;
+                      const formattedVal = hasData ? formatMetricValue(metric.key, val!, metric.unit) : null;
+                      const delta = getMetricDelta(metric.key, val);
 
                       return (
-                        <div key={metric.key} className="rounded-2xl border border-white/[0.04] bg-white/[0.02] overflow-hidden">
-                          {/* Collapsed row */}
+                        <div
+                          key={metric.key}
+                          ref={(el) => { metricRowRefs.current[metric.key] = el; }}
+                          className={
+                            isExpanded
+                              ? 'rounded-2xl bg-white/[0.03] px-3 -mx-3 mb-2 border'
+                              : 'border-b border-[rgba(242,239,232,0.12)]'
+                          }
+                          style={isExpanded ? { borderColor: `${accentColor}55` } : undefined}
+                        >
                           <div
                             onClick={() => {
                               if (hasData) {
@@ -1479,34 +1538,25 @@ export default function RitualDashboard({
                                 setLockedMetric({ title: metric.title, status: availability });
                               }
                             }}
-                            className="flex items-center justify-between p-3.5 cursor-pointer"
+                            className="flex items-center justify-between py-4 cursor-pointer active:scale-[0.99] transition-transform duration-[160ms]"
                           >
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center">
-                                <MIcon className={`w-4 h-4 ${hasData ? 'text-white/40' : 'text-white/15'}`} strokeWidth={2} />
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-[11px] text-white/40">{metric.title}</span>
-                                {hasData ? (
-                                  <span className="text-sm font-normal text-white/80">{formattedVal}</span>
-                                ) : (
-                                  <span className="text-[10px] text-white/40">{getAvailabilityLabel(availability)}</span>
-                                )}
-                              </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[13px] text-[#F2EFE8]/42">{metric.title}</span>
+                              {hasData ? (
+                                <span className="font-display text-[28px] font-light text-[#F2EFE8]/92 tabular-nums leading-tight mt-0.5">{formattedVal}</span>
+                              ) : (
+                                <span className="text-[13px] text-[#F2EFE8]/30 mt-0.5">{getAvailabilityLabel(availability)}</span>
+                              )}
                             </div>
                             {hasData ? (
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[11px] font-medium ${val! > metric.baseline ? 'text-emerald-400/70' : 'text-rose-400/70'}`}>
-                                  {val! > metric.baseline ? '↑' : '↓'}
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className={`text-[13px] tabular-nums ${delta === null ? 'text-[#F2EFE8]/30' : delta >= 0 ? 'text-[#74B6A0]' : 'text-[#C56855]'}`}>
+                                  {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${metric.key === 'activity' ? Math.round(delta).toLocaleString('ru-RU') : Math.abs(delta) < 1 ? delta.toFixed(1) : Math.round(delta)}`}
                                 </span>
-                                <svg className={`w-3 h-3 text-white/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                                  <path d="M4.5 2.5L8 6L4.5 9.5" />
-                                </svg>
+                                <ChevronRight className={`w-4 h-4 text-[#F2EFE8]/25 transition-transform duration-[160ms] ${isExpanded ? 'rotate-90' : ''}`} />
                               </div>
                             ) : (
-                              <div className="flex items-center gap-1">
-                                <Lock className="w-3 h-3 text-white/15" />
-                              </div>
+                              <Lock className="w-4 h-4 text-[#F2EFE8]/20" />
                             )}
                           </div>
 
@@ -1520,19 +1570,33 @@ export default function RitualDashboard({
                                 transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
                                 className="overflow-hidden"
                               >
-                                <div className="px-4 pt-3 pb-5 border-t border-white/[0.04]">
-                                  <div className="flex justify-between items-center mb-4">
-                                    <div className="flex flex-col">
-                                      <span className="text-[9px] text-white/50 uppercase tracking-wide">Текущее</span>
-                                      <span className="text-xs text-white/70 font-medium">{formattedVal}</span>
+                                <div className="pb-6">
+                                  {hasData && (
+                                    <div className="relative h-3 mb-5 mx-0.5">
+                                      <div className="absolute inset-x-0 top-1/2 h-px bg-[rgba(242,239,232,0.12)]" />
+                                      <div
+                                        className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full -ml-1"
+                                        style={{
+                                          left: `${Math.min(96, Math.max(4, ((val! - metric.baseline * 0.75) / (metric.baseline * 0.5)) * 100))}%`,
+                                          backgroundColor: accentColor,
+                                          boxShadow: `0 0 12px ${accentColor}66`,
+                                        }}
+                                      />
                                     </div>
-                                    <div className="flex flex-col items-end">
-                                      <span className="text-[9px] text-white/50 uppercase tracking-wide">Базовая линия</span>
-                                      <span className="text-xs text-white/40">{metric.baseline} {metric.unit}</span>
-                                    </div>
+                                  )}
+                                  <p className="text-[15px] text-[#F2EFE8]/60 leading-relaxed mb-5">
+                                    {metric.key === 'sleep'
+                                      ? getSleepInsight(typeof val === 'number' ? val : null, getMetricDelta('sleep', val))
+                                      : metric.insight}
+                                  </p>
+                                  <div className="flex justify-between text-[13px] text-[#F2EFE8]/42 mb-4">
+                                    <span>Базовая: {metric.baseline} {metric.unit}</span>
+                                    {hasData && delta !== null && (
+                                      <span className={delta >= 0 ? 'text-[#74B6A0]' : 'text-[#C56855]'}>
+                                        {delta >= 0 ? '↑' : '↓'} к вчера
+                                      </span>
+                                    )}
                                   </div>
-
-                                  {/* Custom 7-day Line Chart styled like Trends with labeled points */}
                                   {(() => {
                                     const formatHistoryValue = (key: string, v: number): string => {
                                       switch (key) {
@@ -1564,7 +1628,7 @@ export default function RitualDashboard({
 
                                     if (historyValues.length < 2) {
                                       return (
-                                        <div className="bg-white/[0.01] border border-white/[0.03] rounded-2xl p-4 mb-4">
+                                        <div className="border-y border-white/[0.06] py-4 mb-4">
                                           <p className="text-[11px] text-white/45 leading-relaxed">
                                             Недостаточно дневных точек для графика. Данные появятся после нескольких синхронизаций HealthKit / Health Connect или кольца.
                                           </p>
@@ -1591,7 +1655,7 @@ export default function RitualDashboard({
                                     });
 
                                     return (
-                                      <div className="bg-white/[0.01] border border-white/[0.03] rounded-2xl p-4 mb-4 flex flex-col items-center">
+                                      <div className="border-y border-white/[0.06] py-4 mb-4 flex flex-col items-center">
                                         <div className="w-full h-40 relative">
                                           <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${width} ${height}`}>
                                             {/* Horizontal grid/reference lines */}
@@ -1637,8 +1701,8 @@ export default function RitualDashboard({
                                             <path
                                               d={coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`).join(' ')}
                                               fill="none"
-                                              stroke={metric.color || '#e8e0d4'}
-                                              strokeWidth="3"
+                                              stroke={accentColor}
+                                              strokeWidth="1.5"
                                               strokeLinecap="round"
                                               strokeLinejoin="round"
                                               className="opacity-80"
@@ -1697,10 +1761,6 @@ export default function RitualDashboard({
                                     );
                                   })()}
 
-                                  {/* Insight */}
-                                  <div className="mt-3 pt-3 border-t border-white/[0.04]">
-                                    <p className="text-[12px] text-white/50 leading-relaxed font-normal pl-2 border-l border-white/[0.06]">{metric.insight}</p>
-                                  </div>
                                 </div>
                               </motion.div>
                             )}
@@ -1782,62 +1842,66 @@ export default function RitualDashboard({
                   return (
                     <motion.div 
                       key="trends" 
-                      initial={{ opacity: 0, y: 10 }} 
-                      animate={{ opacity: 1, y: 0 }} 
-                      exit={{ opacity: 0, y: -10 }} 
-                      className="flex flex-col gap-6 px-1"
+                      initial={{ opacity: 0 }} 
+                      animate={{ opacity: 1 }} 
+                      exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 8 }}
+                      transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+                      className="flex flex-col gap-6 pb-4"
                     >
-                      {/* Period selector - minimal inline tabs with active underline */}
-                      <div className="flex justify-center gap-8 py-2 border-b border-white/[0.03]">
+                      <div className="pt-2">
+                        <span className="text-[13px] text-[#F2EFE8]/42">
+                          {formatFriendlyDate(currentSelectedDay.dateStr, currentSelectedDay.isToday, currentSelectedDay.dayOfWeek)}
+                        </span>
+                        <div className="mt-3 flex items-end gap-1">
+                          <span className="font-display text-[72px] font-light leading-none tabular-nums" style={{ color: accentColor }}>
+                            {currentSelectedDay.shineScore === null ? '—' : currentSelectedDay.shineScore}
+                          </span>
+                          {currentSelectedDay.shineScore !== null && (
+                            <span className="mb-3 text-lg text-[#F2EFE8]/42">%</span>
+                          )}
+                        </div>
+                        <p className="mt-3 text-[15px] text-[#F2EFE8]/60 leading-relaxed max-w-[300px]">
+                          {getShineAdvice(currentSelectedDay.shineScore)}
+                        </p>
+                      </div>
+
+                      <div className="flex justify-center gap-8 border-b border-[rgba(242,239,232,0.12)]">
                         {(['7', '30', '90'] as const).map((key) => (
                           <button 
                             key={key} 
+                            type="button"
                             onClick={() => {
                               setAnalyticsPeriod(key);
-                              setSelectedTrendDay(null); // reset selected index when switching periods
+                              setSelectedTrendDay(null);
                             }} 
-                            className={`text-[10px] font-mono tracking-widest uppercase transition-all relative pb-2.5 ${
+                            className={`min-w-16 border-b py-3 text-[13px] font-medium transition-colors duration-[160ms] ${
                               analyticsPeriod === key 
-                                ? 'text-[#E6B85C] font-bold' 
-                                : 'text-white/40 hover:text-white/75'
+                                ? 'border-current text-[#F2EFE8]/90' 
+                                : 'border-transparent text-[#F2EFE8]/42 hover:text-[#F2EFE8]/60'
                             }`}
+                            style={analyticsPeriod === key ? { color: accentColor, borderColor: accentColor } : undefined}
                           >
                             {key === '7' ? 'Неделя' : key === '30' ? '30 дней' : '90 дней'}
-                            {analyticsPeriod === key && (
-                              <span className="absolute bottom-[-1px] left-0 right-0 h-[1.5px] bg-[#E6B85C]" />
-                            )}
                           </button>
                         ))}
                       </div>
 
-                      {/* Main Chart Container - Completely unboxed minimalist layout */}
-                      <div className="flex flex-col gap-5 relative select-none">
-                        
-                        {/* Header metrics */}
-                        <div className="flex justify-between items-baseline">
-                          <div className="flex flex-col">
-                            <span className="text-[9px] text-white/30 uppercase tracking-widest font-mono">Индекс Сияния и Практики</span>
-                            <span className="text-xs text-white/50 font-normal mt-0.5">
-                              {analyticsPeriod === '7' ? 'Детальный 7-дневный баланс' : `Динамика за ${analyticsPeriod} дней`}
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center gap-3 text-[9px] font-mono">
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#E6B85C]" />
-                              <span className="text-white/40">Сияние</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-sm bg-white/15" />
-                              <span className="text-white/40">Практики</span>
-                            </div>
-                          </div>
+                      <div className="flex justify-between items-center text-[13px] text-[#F2EFE8]/42">
+                        <span>Сияние и практики</span>
+                        <div className="flex items-center gap-4">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accentColor }} />
+                            Сияние
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-sm bg-white/20" />
+                            Практики
+                          </span>
                         </div>
-
-                        {/* Interactive SVG Chart */}
+                      </div>
                         <div className="w-full relative py-2">
                           {!hasEnoughTrendData && (
-                            <div className="absolute inset-x-4 top-8 z-10 rounded-2xl border border-white/[0.05] bg-[#070709]/85 p-4 text-center">
+                            <div className="absolute inset-x-4 top-8 z-10 border-y border-white/[0.06] py-4 text-center backdrop-blur-md">
                               <p className="text-[11px] text-white/55 leading-relaxed">
                                 Недостаточно реальных дневных health-данных для линии тренда. Подключите HealthKit / Health Connect или синхронизируйте кольцо несколько дней подряд.
                               </p>
@@ -1922,11 +1986,11 @@ export default function RitualDashboard({
                               <path
                                 d={shinePath}
                                 fill="none"
-                                stroke="#E6B85C"
-                                strokeWidth="1.8"
+                                stroke={accentColor}
+                                strokeWidth="1.5"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
-                                className="opacity-70"
+                                className="opacity-80"
                               />
                             )}
 
@@ -1942,8 +2006,8 @@ export default function RitualDashboard({
                             {/* SVG Definitions */}
                             <defs>
                               <linearGradient id="shine-area-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-                                <stop offset="0%" stopColor="#E6B85C" stopOpacity="0.1" />
-                                <stop offset="100%" stopColor="#E6B85C" stopOpacity="0.0" />
+                                <stop offset="0%" stopColor={accentColor} stopOpacity="0.12" />
+                                <stop offset="100%" stopColor={accentColor} stopOpacity="0" />
                               </linearGradient>
                             </defs>
 
@@ -1953,10 +2017,10 @@ export default function RitualDashboard({
                               y1="10" 
                               x2={points[selectedIndex].x} 
                               y2="95" 
-                              stroke="#E6B85C" 
+                              stroke={accentColor}
                               strokeWidth="0.6" 
                               strokeDasharray="2,2"
-                              className="opacity-40"
+                              className="opacity-35"
                             />
 
                             {/* Points on Shine Line - Blinking circle removed! */}
@@ -1976,8 +2040,8 @@ export default function RitualDashboard({
                                     cx={p.x} 
                                     cy={p.y} 
                                     r={isSelected ? '3.5' : '1.8'} 
-                                    fill={isSelected ? '#E6B85C' : '#070709'} 
-                                    stroke="#E6B85C" 
+                                    fill={isSelected ? accentColor : '#08090A'} 
+                                    stroke={accentColor} 
                                     strokeWidth="1.2" 
                                   />
                                 </g>
@@ -2005,13 +2069,14 @@ export default function RitualDashboard({
                                   key={`lbl-${p.dateStr}`}
                                   x={p.x} 
                                   y="112" 
-                                  className={`text-[8px] font-mono transition-all duration-300 ${
+                                  className={`text-[11px] transition-all duration-300 ${
                                     isSelected 
-                                      ? 'fill-white font-medium' 
+                                      ? 'fill-[#F2EFE8]/90 font-medium' 
                                       : p.isToday 
-                                        ? 'fill-[#E6B85C] font-semibold' 
-                                        : 'fill-white/20'
+                                        ? 'font-medium' 
+                                        : 'fill-[#F2EFE8]/25'
                                   }`}
+                                  style={p.isToday && !isSelected ? { fill: accentColor } : undefined}
                                   textAnchor="middle"
                                 >
                                   {p.label}
@@ -2039,116 +2104,28 @@ export default function RitualDashboard({
                             })}
                           </svg>
                         </div>
-                      </div>
-
-                      {/* SELECTED DAY DETAIL VIEW - Redesigned without cards/borders, using pure text layout and precise hairline separator */}
-                      <div className="h-[1px] bg-white/[0.04] my-1" />
-                      
-                      <motion.div 
-                        key={`detail-${currentSelectedDay.dateStr}`}
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex flex-col gap-4 py-1"
-                      >
-                        {/* Header info */}
-                        <div className="flex justify-between items-baseline">
-                          <span className="text-[13px] font-medium text-white/95">
-                            {formatFriendlyDate(currentSelectedDay.dateStr, currentSelectedDay.isToday, currentSelectedDay.dayOfWeek)}
-                          </span>
-                          <span className="text-[9px] font-mono text-white/30 uppercase tracking-widest">Дневная сводка</span>
+                      <div className="border-t border-[rgba(242,239,232,0.12)] pt-4">
+                        <div className="flex justify-between items-baseline mb-3">
+                          <span className="text-[13px] text-[#F2EFE8]/42">Ритуалы</span>
+                          <span className="text-[13px] text-[#F2EFE8]/70 tabular-nums">{currentSelectedDay.practicesCount} сессий</span>
                         </div>
-
-                        {/* Core indicators columns - separated by thin vertical lines, no card border/bg */}
-                        <div className="grid grid-cols-2 gap-6 py-3 border-y border-white/[0.03]">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-[9px] text-white/40 uppercase tracking-widest font-mono">Индекс Сияния</span>
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="text-2xl font-semibold font-mono text-[#E6B85C]">
-                                {currentSelectedDay.shineScore === null ? '—' : `${currentSelectedDay.shineScore}%`}
-                              </span>
-                              <span className="text-[9px] text-emerald-400/80 font-mono">
-                                {currentSelectedDay.shineScore === null ? 'нет данных' : 'тонус'}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          <div className="flex flex-col gap-1 border-l border-white/[0.04] pl-6">
-                            <span className="text-[9px] text-white/40 uppercase tracking-widest font-mono">Выполнено сессий</span>
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="text-2xl font-semibold font-mono text-white">
-                                {currentSelectedDay.practicesCount}
-                              </span>
-                              <span className="text-[10px] text-white/40 font-normal">
-                                {currentSelectedDay.practicesCount === 1 ? 'сессия' : currentSelectedDay.practicesCount >= 2 && currentSelectedDay.practicesCount <= 4 ? 'сессии' : 'сессий'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Completed practices listed as clean inline rows */}
-                        <div className="flex flex-col gap-1.5">
-                          {dayPractices.length > 0 ? (
-                            <div className="flex flex-col gap-2">
-                              <span className="text-[9px] text-white/30 uppercase tracking-widest font-mono">Выполненные ритуалы</span>
-                              <div className="flex flex-col gap-1.5">
-                                {dayPractices.map((p, pIdx) => (
-                                  <div key={pIdx} className="flex items-center justify-between text-xs text-white/80 py-1 border-b border-white/[0.01]">
-                                    <span className="flex items-center gap-2">
-                                      <span className="text-white/40">🧘</span>
-                                      <span className="font-medium">{p.practiceTitle}</span>
-                                    </span>
-                                    <span className="text-white/30 font-mono text-[10px]">{p.minutes} мин</span>
-                                  </div>
-                                ))}
+                        {dayPractices.length > 0 ? (
+                          <div className="flex flex-col">
+                            {dayPractices.map((p, pIdx) => (
+                              <div key={pIdx} className="flex items-center justify-between py-3 border-b border-[rgba(242,239,232,0.12)] text-[15px] text-[#F2EFE8]/80">
+                                <span className="flex items-center gap-2">
+                                  <span className="w-1 h-1 rounded-full bg-[#F2EFE8]/30" />
+                                  {p.practiceTitle}
+                                </span>
+                                <span className="text-[13px] text-[#F2EFE8]/42">{p.minutes} мин</span>
                               </div>
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-white/35 italic leading-relaxed">
-                              В этот день дыхательных практик и осознанных сессий не зафиксировано.
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Bio-feedback advice */}
-                        <p className="text-[11px] text-white/50 leading-relaxed font-normal">
-                          {getShineAdvice(currentSelectedDay.shineScore)}
-                        </p>
-                      </motion.div>
-
-                      {/* EDUCATIONAL GUIDE - Editorial help section with zero borders or backgrounds */}
-                      <div className="h-[1px] bg-white/[0.04] my-2" />
-                      
-                      <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 rounded-full bg-white/[0.05] flex items-center justify-center text-white/40 text-[9px] font-mono font-bold">i</div>
-                          <h5 className="text-[10px] font-semibold text-white/60 uppercase tracking-widest font-mono">Расчет показателей</h5>
-                        </div>
-                        
-                        <div className="flex flex-col gap-3 text-[11px] text-white/45 leading-relaxed font-normal">
-                          <p>
-                            Метрики объединяют биологическую обратную связь и поведенческие маркеры:
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[13px] text-[#F2EFE8]/35 leading-relaxed">
+                            В этот день практик не зафиксировано.
                           </p>
-                          
-                          <div className="flex flex-col gap-2.5 pl-0.5">
-                            <div className="flex gap-2">
-                              <span className="text-white/30 font-mono select-none">•</span>
-                              <div>
-                                <strong className="text-white/70 font-normal">Индекс Сияния (золотая линия):</strong> физиологический тонус (0-100%), рассчитанный только по реальным дневным данным HealthKit, Health Connect или кольца. Дни без биометрии не дорисовываются.
-                              </div>
-                            </div>
-                            
-                            <div className="flex gap-2">
-                              <span className="text-white/30 font-mono select-none">•</span>
-                              <div>
-                                <strong className="text-white/70 font-normal">Осознанная активность (бары):</strong> накопленный объем сессий. Дыхание регулирует тонус блуждающего нерва, формируя физический буфер против стресса.
-                              </div>
-                            </div>
-                          </div>
-
-                          <p className="border-t border-white/[0.02] pt-2.5 text-[10px] text-white/30">
-                            💡 Нажмите на любую точку графика для просмотра детальной истории за выбранную дату.
-                          </p>
-                        </div>
+                        )}
                       </div>
                     </motion.div>
                   );
@@ -2156,8 +2133,10 @@ export default function RitualDashboard({
               </AnimatePresence>
             </main>
           </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
 
       {/* ===== CYCLE BOTTOM SHEET ===== */}
       <AnimatePresence>
@@ -2316,121 +2295,131 @@ export default function RitualDashboard({
       />
 
       {/* ===== INTENTION SELECTION MODAL ===== */}
-      <AnimatePresence>
-        {isIntentionModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-md">
-            {/* Click outside to close */}
-            <div className="absolute inset-0" onClick={() => setIsIntentionModalOpen(false)} />
-
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isIntentionModalOpen && (
             <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="relative w-full max-w-md bg-[#0e0e16]/95 border-t border-white/10 rounded-t-[40px] px-6 pt-5 pb-8 shadow-2xl z-10 overflow-hidden flex flex-col gap-5 text-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-[220] flex items-end justify-center bg-black/70 backdrop-blur-md overscroll-none"
             >
-              {/* Grab bar */}
-              <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-2" />
+              <div className="absolute inset-0" onClick={() => setIsIntentionModalOpen(false)} aria-hidden="true" />
 
-              {/* Header */}
-              <div className="flex justify-between items-center pb-2">
-                <span className="text-xs text-white/40 uppercase tracking-widest font-mono">Намерение на день</span>
-                <button
-                  onClick={() => setIsIntentionModalOpen(false)}
-                  className="w-8 h-8 rounded-full bg-white/5 border border-white/5 flex items-center justify-center text-white/60 hover:text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Proposed intention display */}
-              <div className="flex flex-col items-center gap-4 py-4 min-h-[140px] justify-center">
-                <span className="text-[10px] text-amber-300 font-mono tracking-widest uppercase bg-amber-400/10 px-3 py-1 rounded-full border border-amber-400/20 animate-pulse">
-                  Рекомендация по состоянию ({shineScore}%)
-                </span>
-                
-                {isCustomInput ? (
-                  <div className="w-full flex flex-col gap-2">
-                    <textarea
-                      value={customText}
-                      onChange={(e) => setCustomText(e.target.value)}
-                      placeholder="Напишите своё намерение на сегодня..."
-                      maxLength={100}
-                      rows={3}
-                      className="w-full bg-white/[0.03] border border-white/10 rounded-2xl p-4 text-sm text-white placeholder-white/20 focus:outline-none focus:border-amber-400/40 font-sans resize-none text-center"
-                      autoFocus
-                    />
-                    <span className="text-[9px] text-white/30 self-end mr-2">
-                      {customText.length}/100 символов
-                    </span>
-                  </div>
-                ) : (
-                  <motion.p
-                    key={modalIntention}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="text-lg italic font-semibold text-white/90 leading-relaxed px-4"
-                    style={{ fontFamily: 'var(--font-display)' }}
-                  >
-                    «{modalIntention}»
-                  </motion.p>
-                )}
-              </div>
-
-              {/* Action Toggles */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={handleNextIntention}
-                  className="h-12 rounded-xl bg-white/[0.04] border border-white/5 hover:bg-white/[0.08] hover:border-white/10 text-xs font-semibold text-white/80 active:scale-95 transition-all"
-                >
-                  Другое
-                </button>
-                <button
-                  onClick={() => setIsCustomInput(true)}
-                  className={`h-12 rounded-xl border text-xs font-semibold active:scale-95 transition-all ${
-                    isCustomInput
-                      ? 'bg-amber-400/[0.04] border-amber-400 text-amber-300'
-                      : 'bg-white/[0.04] border-white/5 hover:bg-white/[0.08] hover:border-white/10 text-white/80'
-                  }`}
-                >
-                  Написать своё
-                </button>
-              </div>
-
-              {/* Confirm Action Button */}
-              <button
-                onClick={() => {
-                  const selectedText = isCustomInput ? customText.trim() : modalIntention;
-                  if (selectedText) {
-                    setDailyFocus(selectedText);
-                    const todayStr = getTodayDateString();
-                    localStorage.setItem('ritual_day_focus', selectedText);
-                    localStorage.setItem('ritual_day_focus_date', todayStr);
-                    const presetId = isCustomInput ? null : getPresetIntentionId(selectedText);
-                    if (presetId) {
-                      localStorage.setItem('ritual_day_focus_preset_id', presetId);
-                    } else {
-                      localStorage.removeItem('ritual_day_focus_preset_id');
-                    }
-                    setFocusDate(todayStr);
-                    // Clear previous evening reflection when setting new intention
-                    localStorage.removeItem('ritual_reflection_date');
-                    localStorage.removeItem('ritual_reflection_answer');
-                    localStorage.removeItem('ritual_reflection_reaction');
-                    setReflection({ answer: null, reactionText: '' });
-                    requestPrivacySafeSync();
-                  }
-                  setIsIntentionModalOpen(false);
-                }}
-                disabled={isCustomInput && !customText.trim()}
-                className="w-full h-12 rounded-xl bg-gradient-to-br from-amber-300 to-amber-500 text-black font-semibold hover:opacity-95 active:scale-[0.98] transition-all disabled:opacity-30 disabled:pointer-events-none mt-2 shadow-lg shadow-amber-500/10 flex items-center justify-center text-sm"
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                className="relative w-full max-w-md z-10 px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]"
               >
-                Подтвердить
-              </button>
+                <GlassSurface className="rounded-t-[28px] rounded-b-[20px] px-5 pt-5 pb-6 flex flex-col gap-5 text-center">
+                  <div className="w-10 h-1 bg-white/10 rounded-full mx-auto" />
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-[13px] text-[#F2EFE8]/42">Намерение на день</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsIntentionModalOpen(false)}
+                      aria-label="Закрыть"
+                      className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center text-[#F2EFE8]/50 active:scale-[0.97] transition-transform duration-[160ms]"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-4 py-2 min-h-[120px] justify-center">
+                    <span
+                      className="text-[13px] py-1.5 px-3 rounded-full border border-white/10"
+                      style={{ borderColor: `${accentColor}44`, color: accentColor }}
+                    >
+                      Рекомендация · Сияние {shineScore}%
+                    </span>
+
+                    {isCustomInput ? (
+                      <div className="w-full flex flex-col gap-2 text-left">
+                        <textarea
+                          value={customText}
+                          onChange={(e) => setCustomText(e.target.value)}
+                          placeholder="Напишите своё намерение на сегодня..."
+                          maxLength={100}
+                          rows={3}
+                          className="w-full bg-white/[0.04] border border-white/10 rounded-[18px] p-4 text-[15px] text-[#F2EFE8]/90 placeholder:text-[#F2EFE8]/25 focus:outline-none focus:border-white/20 resize-none"
+                          autoFocus
+                        />
+                        <span className="text-[11px] text-[#F2EFE8]/30 self-end">
+                          {customText.length}/100
+                        </span>
+                      </div>
+                    ) : (
+                      <motion.p
+                        key={modalIntention}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="font-display text-[22px] font-light italic text-[#F2EFE8]/90 leading-snug px-2"
+                      >
+                        «{modalIntention}»
+                      </motion.p>
+                    )}
+                  </div>
+
+                  <GlassSurface className="p-1 grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={handleNextIntention}
+                      className="py-3 rounded-[18px] text-[13px] font-medium text-[#F2EFE8]/70 active:scale-[0.97] transition-transform duration-[160ms]"
+                    >
+                      Другое
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomInput(true)}
+                      className={`py-3 rounded-[18px] text-[13px] font-medium transition-colors duration-[160ms] ${
+                        isCustomInput ? 'bg-white/[0.10] text-[#F2EFE8]/92' : 'text-[#F2EFE8]/42'
+                      }`}
+                    >
+                      Написать своё
+                    </button>
+                  </GlassSurface>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const selectedText = isCustomInput ? customText.trim() : modalIntention;
+                      if (selectedText) {
+                        setDailyFocus(selectedText);
+                        const todayStr = getTodayDateString();
+                        localStorage.setItem('ritual_day_focus', selectedText);
+                        localStorage.setItem('ritual_day_focus_date', todayStr);
+                        const presetId = isCustomInput ? null : getPresetIntentionId(selectedText);
+                        if (presetId) {
+                          localStorage.setItem('ritual_day_focus_preset_id', presetId);
+                        } else {
+                          localStorage.removeItem('ritual_day_focus_preset_id');
+                        }
+                        setFocusDate(todayStr);
+                        localStorage.removeItem('ritual_reflection_date');
+                        localStorage.removeItem('ritual_reflection_answer');
+                        localStorage.removeItem('ritual_reflection_reaction');
+                        setReflection({ answer: null, reactionText: '' });
+                        requestPrivacySafeSync();
+                      }
+                      setIsIntentionModalOpen(false);
+                    }}
+                    disabled={isCustomInput && !customText.trim()}
+                    className="w-full h-12 rounded-[18px] bg-[#F2EFE8] text-[#08090A] text-[15px] font-medium active:scale-[0.97] transition-transform duration-[160ms] disabled:opacity-30 disabled:pointer-events-none"
+                  >
+                    Подтвердить
+                  </button>
+                </GlassSurface>
+              </motion.div>
             </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
 
       {/* ===== FULLSCREEN READING MODE OVERLAY ===== */}
       <AnimatePresence>
@@ -2540,8 +2529,6 @@ export default function RitualDashboard({
                       <Clock className="w-3.5 h-3.5" />
                       {activeArticle.readTime}
                     </span>
-                    <span>•</span>
-                    <span className="text-xl">{activeArticle.emoji}</span>
                   </div>
                 </div>
 

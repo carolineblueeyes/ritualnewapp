@@ -164,12 +164,13 @@ export default function TimePickerModal({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 28, scale: 0.98 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-sm rounded-3xl border border-white/[0.08] bg-[#101014] p-5 shadow-2xl"
+        className="ritual-sheet w-full max-w-sm rounded-[32px] p-5"
+        style={{ '--sheet-color': '#9fb7ff' } as React.CSSProperties}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-white/[0.05] border border-white/[0.06] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl ritual-soft-control flex items-center justify-center">
               <Clock className="w-5 h-5 text-white/60" />
             </div>
             <div className="min-w-0 text-left">
@@ -177,23 +178,23 @@ export default function TimePickerModal({
               {subtitle && <p className="text-[10px] text-white/45 mt-0.5 leading-snug">{subtitle}</p>}
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/[0.04] flex items-center justify-center">
+          <button onClick={onClose} className="w-8 h-8 rounded-full ritual-soft-control flex items-center justify-center">
             <X className="w-4 h-4 text-white/45" />
           </button>
         </div>
 
         <div className="relative grid grid-cols-[1fr_auto_1fr] gap-3 py-5">
-          <div className="absolute left-0 right-0 top-1/2 h-10 -translate-y-1/2 rounded-2xl border border-white/[0.06] bg-white/[0.03] pointer-events-none" />
+          <div className="absolute left-0 right-0 top-1/2 h-10 -translate-y-1/2 rounded-2xl border border-white/[0.075] bg-white/[0.045] pointer-events-none" />
           <TimeWheelColumn items={hours} value={hour} onChange={setHour} />
           <div className="relative z-10 flex items-center justify-center text-xl font-mono text-white/35">:</div>
           <TimeWheelColumn items={minutes} value={minute} onChange={setMinute} />
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={onClose} className="h-11 rounded-xl bg-white/[0.04] text-[11px] font-medium text-white/55">
+          <button onClick={onClose} className="h-11 rounded-xl ritual-soft-control text-[11px] font-medium text-white/65">
             Отмена
           </button>
-          <button onClick={confirm} className="h-11 rounded-xl bg-white text-black text-[11px] font-semibold flex items-center justify-center gap-2">
+          <button onClick={confirm} className="h-11 rounded-xl ritual-primary-action text-[11px] font-semibold flex items-center justify-center gap-2" style={{ '--action-from': '#f4f1ea', '--action-to': '#9fb7ff' } as React.CSSProperties}>
             <Check className="w-4 h-4" />
             Готово
           </button>

@@ -44,7 +44,8 @@ export default function ConnectHealthModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-[#070709]/95 backdrop-blur-2xl flex items-center justify-center p-6"
+      className="fixed inset-0 z-50 backdrop-blur-2xl flex items-center justify-center p-6 ritual-flow"
+      style={{ '--flow-color': '#9fb7ff' } as React.CSSProperties}
       onClick={onClose}
     >
       <motion.div
@@ -52,20 +53,21 @@ export default function ConnectHealthModal({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.95 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
-        className="bg-[#121215] border border-white/[0.06] rounded-3xl p-6 w-full max-w-sm flex flex-col gap-5"
+        className="ritual-sheet rounded-[32px] p-6 w-full max-w-sm flex flex-col gap-5"
+        style={{ '--sheet-color': '#9fb7ff' } as React.CSSProperties}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
-              <Smartphone className="w-5 h-5 text-amber-300" />
+            <div className="w-10 h-10 rounded-full bg-white/[0.035] flex items-center justify-center">
+              <Smartphone className="w-5 h-5 text-[#9fb7ff]" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-white">Подключите здоровье</h3>
               <p className="text-[10px] text-white/60">{sourceTitle}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] transition-all">
+          <button onClick={onClose} className="p-1.5 rounded-full ritual-soft-control hover:bg-white/[0.08] transition-all">
             <X className="w-4 h-4 text-white/40" />
           </button>
         </div>
@@ -81,19 +83,20 @@ export default function ConnectHealthModal({
             <button
               onClick={handleConnect}
               disabled={isConnecting}
-              className="w-full h-12 rounded-xl bg-white text-black text-[11px] font-semibold hover:bg-white/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+              className="w-full h-12 rounded-full ritual-primary-action text-[11px] font-semibold hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+              style={{ '--action-from': '#f4f1ea', '--action-to': '#9fb7ff' } as React.CSSProperties}
             >
               {platform === 'ios' ? <Apple className="w-4 h-4 fill-current" /> : <Smartphone className="w-4 h-4" />}
               {isConnecting ? 'Подключение...' : connectLabel}
             </button>
           ) : (
-            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-3 text-[11px] text-white/55 leading-relaxed">
+            <div className="border-y border-white/[0.08] py-3 text-[11px] text-white/60 leading-relaxed">
               Откройте Ritual на телефоне, чтобы выдать системные разрешения и синхронизировать реальные данные.
             </div>
           )}
 
           {status && (
-            <div className="rounded-xl bg-white/[0.04] px-3 py-2 text-[10px] font-mono uppercase tracking-wider text-white/50">
+            <div className="border-b border-white/[0.08] py-2 text-[10px] font-mono uppercase tracking-wider text-white/50">
               {status}
             </div>
           )}
@@ -104,7 +107,7 @@ export default function ConnectHealthModal({
                 href="https://apps.apple.com/app/ritual"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="h-11 rounded-xl bg-white/5 border border-white/10 text-white text-[11px] font-semibold hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              className="h-11 border-b border-white/[0.08] text-white text-[11px] font-semibold active:scale-[0.98] transition-all flex items-center justify-center gap-2"
               >
                 <Apple className="w-4 h-4 fill-current" />
                 App Store
@@ -113,7 +116,7 @@ export default function ConnectHealthModal({
                 href="https://play.google.com/store/apps/details?id=com.ritual.app"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="h-11 rounded-xl bg-white/5 border border-white/10 text-white text-[11px] font-semibold hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                className="h-11 border-b border-white/[0.08] text-white text-[11px] font-semibold active:scale-[0.98] transition-all flex items-center justify-center gap-2"
               >
                 <Smartphone className="w-4 h-4" />
                 Google Play
@@ -130,7 +133,7 @@ export default function ConnectHealthModal({
             href="https://ritual.store"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full h-11 rounded-xl bg-amber-400/10 border border-amber-400/20 text-amber-300 text-[11px] font-semibold hover:bg-amber-400/15 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            className="w-full h-11 border-b border-white/[0.08] text-[#e6b85c] text-[11px] font-semibold active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
             <ShoppingBag className="w-4 h-4" />
             Купить кольцо Ritual

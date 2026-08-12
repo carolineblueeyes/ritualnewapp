@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Check } from 'lucide-react';
 import { Practice } from '../../types';
 import { StandalonePractice } from '../../data/practices/types';
 import { STANDALONE_GROUP_COLORS } from '../../data/practices';
@@ -95,7 +96,7 @@ export default function CompletionScreen({
               background: `radial-gradient(circle, #fff 0%, ${color}aa 100%)`,
             }}
           >
-            <span className="text-black text-xl font-light">✨</span>
+            <Check className="w-7 h-7 text-black/80" strokeWidth={1.5} />
           </motion.div>
         </div>
 
