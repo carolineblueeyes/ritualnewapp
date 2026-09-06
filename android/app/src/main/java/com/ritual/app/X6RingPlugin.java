@@ -93,6 +93,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
     private RingStore store;
     private X6GattClient client;
     private PluginCall scanCall;
+    private Runnable scanTimeoutRunnable;
     private PluginCall connectCall;
     private PluginCall syncCall;
     private final Map<String, JSObject> scanned = new LinkedHashMap<>();
@@ -177,6 +178,12 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
                     .put("recognized", true);
                 scanned.put(device.getAddress(), item);
                 notifyListeners("scanResult", item, true);
+                // Первое найденное кольцо — завершаем скан через 2.5 сек,
+                // чтобы успеть собрать остальные устройства рядом.
+                if (scanned.size() == 1) {
+                    main.removeCallbacks(scanTimeoutRunnable);
+                    main.postDelayed(scanTimeoutRunnable, 2500);
+                }
             }
             @Override public void onError(int code) {
                 String message = code == -1
@@ -185,7 +192,8 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
                 finishScan(message);
             }
         });
-        main.postDelayed(() -> finishScan(null), timeout);
+        scanTimeoutRunnable = () -> finishScan(null);
+        main.postDelayed(scanTimeoutRunnable, timeout);
     }
 
     @PluginMethod
@@ -258,7 +266,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         // be interleaved until the ring sends dataEnd (or the timeout expires).
         client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0, syncFrom));
         main.removeCallbacks(sleepSyncTimeout);
-        main.postDelayed(sleepSyncTimeout, 15000);
+        main.postDelayed(sleepSyncTimeout, 8000);
     }
 
     private void finishSleepSyncPhase(boolean completedByDevice) {
@@ -275,7 +283,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         client.enqueue(BleSDK.GetDynamicHRWithMode((byte) 0, syncFrom));
         client.enqueue(BleSDK.Oxygen_data((byte) 0, syncFrom));
         client.enqueue(BleSDK.GetTemperature_historyData((byte) 0, syncFrom));
-        main.postDelayed(this::completeSync, 9000);
+        main.postDelayed(this::completeSync, 4000);
     }
 
     private void completeSync() {
@@ -345,12 +353,12 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
                 if (sleepContinueCount < 20) {
                     sleepContinueCount++;
                     client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0x02, ""));
-                    main.postDelayed(sleepSyncTimeout, 4000);
+                    main.postDelayed(sleepSyncTimeout, 3000);
                 } else {
                     finishSleepSyncPhase(true);
                 }
             } else {
-                main.postDelayed(sleepSyncTimeout, 15000);
+                main.postDelayed(sleepSyncTimeout, 8000);
                 if (sleepPacketCount % 50 == 0) {
                     client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0x02, ""));
                 }
@@ -384,6 +392,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
     }
 
     private void finishScan(String error) {
+        main.removeCallbacks(scanTimeoutRunnable);
         client.stopScan();
         PluginCall pending = scanCall; scanCall = null;
         if (pending == null) return;
@@ -520,7 +529,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
             @Override public void onDescriptorWrite(BluetoothGatt g, BluetoothGattDescriptor d, int status) { if (status == BluetoothGatt.GATT_SUCCESS) { setState("connected", null); drain(); } else setState("error", "Не удалось включить поток данных"); }
             @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic c) { listener.onData(c.getValue()); }
             @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic c, byte[] value) { listener.onData(value); }
-            @Override public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) { writing = false; main.postDelayed(() -> drain(), status == BluetoothGatt.GATT_SUCCESS ? 120 : 500); }
+            @Override public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) { writing = false; main.postDelayed(() -> drain(), status == BluetoothGatt.GATT_SUCCESS ? 40 : 500); }
         };
         private void setState(String value, String message) { state = value; main.post(() -> listener.onState(value, message)); }
         @SuppressLint("MissingPermission") private void closeGatt() { if (gatt != null) { try { gatt.close(); } catch (Exception ignored) {} } gatt = null; writeCharacteristic = null; writing = false; }

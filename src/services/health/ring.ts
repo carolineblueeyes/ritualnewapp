@@ -38,10 +38,6 @@ function dateDaysAgo(days: number): string {
   return local.toISOString().slice(0, 10);
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 export function selectRecentSleepHours(todaySummary: RingDailySummary, previousSummary: RingDailySummary | null): number | null {
   if (todaySummary.sleepHours !== null && todaySummary.sleepHours > 0) return todaySummary.sleepHours;
   if (!previousSummary || previousSummary.sleepHours === null || previousSummary.sleepHours <= 0) return null;
@@ -51,6 +47,34 @@ export function selectRecentSleepHours(todaySummary: RingDailySummary, previousS
   return Number.isFinite(endedAt) && age >= -6 * 3_600_000 && age <= 30 * 3_600_000
     ? previousSummary.sleepHours
     : null;
+}
+
+function extractBpm(data: any): number {
+  if (data == null) return 0;
+  if (typeof data === 'number') return data;
+  if (typeof data === 'string') {
+    const parsed = Number(data);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (typeof data === 'object') {
+    const candidates = ['heartRate', 'onceHeartValue', 'HeartRateValue', 'heartRateValue', 'value'];
+    for (const key of candidates) {
+      const value = data[key];
+      if (value != null) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+    }
+    // Рекурсивный поиск по вложенным объектам
+    for (const key of Object.keys(data)) {
+      const nested = data[key];
+      if (nested && typeof nested === 'object') {
+        const found = extractBpm(nested);
+        if (found > 0) return found;
+      }
+    }
+  }
+  return 0;
 }
 
 function remember(info: RingDeviceInfo) {
@@ -99,10 +123,17 @@ export const bleRingService = {
     try {
       const info = brandedInfo(await X6Ring.connect({ address, name }));
       remember(info);
-      await X6Ring.configureAutoMonitoring({ enabled: true, intervalMinutes: 30, startHour: 0, endHour: 23, weekMask: 127 });
-      await X6Ring.sync();
-      deviceInfo = brandedInfo(await X6Ring.getDeviceInfo());
-      remember(deviceInfo);
+      // Настройка мониторинга и синхронизация выполняются в фоне —
+      // пользователь видит «Кольцо готово» сразу после GATT-подключения.
+      void X6Ring.configureAutoMonitoring({ enabled: true, intervalMinutes: 30, startHour: 0, endHour: 23, weekMask: 127 })
+        .catch(error => console.warn('[X6Ring] Auto-monitoring config failed:', error));
+      void X6Ring.sync()
+        .then(() => X6Ring.getDeviceInfo())
+        .then(info => {
+          deviceInfo = brandedInfo(info);
+          remember(deviceInfo);
+        })
+        .catch(error => console.warn('[X6Ring] Background sync failed:', error));
       return true;
     } catch (error) {
       console.warn('[X6Ring] Connect failed:', error);
@@ -112,28 +143,33 @@ export const bleRingService = {
     }
   },
 
-  async disconnect(): Promise<void> {
-    if (this.isAvailable()) await X6Ring.disconnect();
-    connected = false;
-    localStorage.setItem(CONNECTED_KEY, 'false');
-  },
-
-  async forget(): Promise<void> {
-    if (this.isAvailable()) await X6Ring.forgetDevice();
-    connected = false;
-    deviceInfo = null;
-    localStorage.removeItem(ADDRESS_KEY);
-    localStorage.removeItem(CONNECTED_KEY);
-    localStorage.removeItem(NAME_KEY);
-  },
-
   async reconnectIfRemembered(): Promise<boolean> {
     const address = localStorage.getItem(ADDRESS_KEY);
     if (!this.isAvailable() || !address) return false;
     try {
       let state = await X6Ring.getConnectionState();
-      for (let attempt = 0; state.state === 'connecting' && attempt < 20; attempt += 1) {
-        await wait(400);
+      // Если плагин уже сам подключается (load() → client.connect) — ждём
+      // событие connectionStateChanged вместо активного polling.
+      if (state.state === 'connecting') {
+        const connected = await new Promise<boolean>(async resolve => {
+          let timeout: ReturnType<typeof setTimeout> | undefined;
+          const handle = await X6Ring.addListener('connectionStateChanged', (event: { state: string }) => {
+            if (event.state === 'connected') {
+              if (timeout) clearTimeout(timeout);
+              void handle.remove();
+              resolve(true);
+            } else if (event.state === 'error' || event.state === 'disconnected') {
+              if (timeout) clearTimeout(timeout);
+              void handle.remove();
+              resolve(false);
+            }
+          });
+          timeout = setTimeout(() => {
+            void handle.remove();
+            resolve(false);
+          }, 5000);
+        });
+        if (!connected) return false;
         state = await X6Ring.getConnectionState();
       }
       if (state.state !== 'connected') {
@@ -155,6 +191,21 @@ export const bleRingService = {
       localStorage.setItem(CONNECTED_KEY, 'false');
       return false;
     }
+  },
+
+  async disconnect(): Promise<void> {
+    if (this.isAvailable()) await X6Ring.disconnect();
+    connected = false;
+    localStorage.setItem(CONNECTED_KEY, 'false');
+  },
+
+  async forget(): Promise<void> {
+    if (this.isAvailable()) await X6Ring.forgetDevice();
+    connected = false;
+    deviceInfo = null;
+    localStorage.removeItem(ADDRESS_KEY);
+    localStorage.removeItem(CONNECTED_KEY);
+    localStorage.removeItem(NAME_KEY);
   },
 
   async sync(): Promise<void> {
@@ -185,12 +236,22 @@ export const bleRingService = {
     return (await X6Ring.getSeries({ type, from: to - days * 86_400_000, to, aggregation })).points;
   },
 
-  startLiveMeasurement(type: 'heartRate' | 'hrv' | 'spo2') {
-    return X6Ring.startLiveMeasurement({ type });
+  async startLiveHeartRate(onReading: (bpm: number) => void): Promise<() => void> {
+    if (!this.isAvailable() || !this.isConnected()) return () => {};
+    const handle = await X6Ring.addListener('liveMeasurement', (event: { type: string; data: any }) => {
+      if (event.type !== 'heartRate') return;
+      const bpm = extractBpm(event.data);
+      if (bpm > 0) onReading(bpm);
+    });
+    await X6Ring.startLiveMeasurement({ type: 'heartRate' });
+    return () => {
+      void handle.remove();
+      void X6Ring.stopLiveMeasurement().catch(() => {});
+    };
   },
 
-  stopLiveMeasurement() {
-    return X6Ring.stopLiveMeasurement();
+  async stopLiveMeasurement() {
+    if (this.isAvailable()) await X6Ring.stopLiveMeasurement();
   },
 
   async getMetrics(): Promise<HealthMetrics> {

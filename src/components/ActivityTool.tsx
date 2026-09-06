@@ -9,6 +9,9 @@ import ActivityMap from './ActivityMap';
 import { geolocationService, GeoPoint } from '../services/geolocation';
 import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged } from '../services/supabase/auth';
 import GlassSurface from './ui/GlassSurface';
+import { bleRingService } from '../services/health/ring';
+import { getCachedHealthData } from '../services/health/manager';
+import type { HealthMetrics } from '../services/health/types';
 
 interface ActivityToolProps {
   onClose: () => void;
@@ -162,6 +165,12 @@ export default function ActivityTool({ onClose }: ActivityToolProps) {
 
   const trackerInterval = useRef<NodeJS.Timeout | null>(null);
   const heartRateInterval = useRef<NodeJS.Timeout | null>(null);
+  const stopLiveHeartRateRef = useRef<(() => void) | null>(null);
+  const healthMetricsRef = useRef<HealthMetrics | null>(null);
+  const caloriesAtStartRef = useRef(0);
+  const realCaloriesRef = useRef(0);
+  const hasRealCaloriesRef = useRef(false);
+  const hasLiveReadingRef = useRef(false);
 
   useEffect(() => {
     const initGps = async () => {
@@ -200,18 +209,59 @@ export default function ActivityTool({ onClose }: ActivityToolProps) {
 
   useEffect(() => {
     if (isRecording && !isPaused) {
-      const [min, max] = HEART_RATE_RANGES[selectedType] || [120, 160];
-      setHeartRate(Math.floor((min + max) / 2));
-      heartRateInterval.current = setInterval(() => {
-        setHeartRate(prev => {
-          const delta = Math.floor(Math.random() * 5) - 2;
-          return Math.max(min, Math.min(max, prev + delta));
+      const [wildMin, wildMax] = HEART_RATE_RANGES[selectedType] || [120, 160];
+      const baseHr = healthMetricsRef.current?.restingHR;
+      const startSimulated = () => {
+        const effectiveMin = baseHr && baseHr > 0 ? Math.max(baseHr + 20, wildMin) : wildMin;
+        const effectiveMax = baseHr && baseHr > 0 ? Math.max(baseHr + 50, wildMax) : wildMax;
+        setHeartRate(Math.floor((effectiveMin + effectiveMax) / 2));
+        if (heartRateInterval.current) clearInterval(heartRateInterval.current);
+        heartRateInterval.current = setInterval(() => {
+          setHeartRate(prev => {
+            if (hasLiveReadingRef.current) return prev;
+            const delta = Math.floor(Math.random() * 5) - 2;
+            return Math.max(effectiveMin, Math.min(effectiveMax, prev + delta));
+          });
+        }, 1000);
+      };
+
+      // Если кольцо подключено — пробуем реальный live-пульс.
+      // Симуляцию запускаем СРАЗУ, чтобы не было «0», а live-данные с
+      // кольца, когда придут, переопределят моделируемое значение.
+      if (bleRingService.isConnected() && bleRingService.isAvailable()) {
+        hasLiveReadingRef.current = false;
+        startSimulated();
+
+        void bleRingService.startLiveHeartRate(bpm => {
+          hasLiveReadingRef.current = true;
+          if (heartRateInterval.current) {
+            clearInterval(heartRateInterval.current);
+            heartRateInterval.current = null;
+          }
+          setHeartRate(bpm);
+        }).then(stop => {
+          stopLiveHeartRateRef.current = stop;
+        }).catch(() => {
+          // Live-замер недоступен — симуляция уже идёт, ничего не делаем.
         });
-      }, 1000);
+      } else {
+        // Нет кольца — симуляция сразу (как раньше).
+        startSimulated();
+      }
     } else if (heartRateInterval.current) {
       clearInterval(heartRateInterval.current);
+      heartRateInterval.current = null;
     }
-    return () => { if (heartRateInterval.current) clearInterval(heartRateInterval.current); };
+    return () => {
+      if (heartRateInterval.current) {
+        clearInterval(heartRateInterval.current);
+        heartRateInterval.current = null;
+      }
+      if (stopLiveHeartRateRef.current) {
+        stopLiveHeartRateRef.current();
+        stopLiveHeartRateRef.current = null;
+      }
+    };
   }, [isRecording, isPaused, selectedType]);
 
   useEffect(() => {
@@ -226,6 +276,13 @@ export default function ActivityTool({ onClose }: ActivityToolProps) {
   }, []);
 
   const startTracking = () => {
+    // Загружаем реальные метрики здоровья для калорий и пульса.
+    healthMetricsRef.current = getCachedHealthData();
+    const metrics = healthMetricsRef.current;
+    caloriesAtStartRef.current = metrics?.calories ?? 0;
+    realCaloriesRef.current = 0;
+    hasRealCaloriesRef.current = (metrics?.calories ?? 0) > 0;
+
     setMapRevealState('revealing');
     setTimeout(() => {
       setIsRecording(true);
@@ -247,13 +304,30 @@ export default function ActivityTool({ onClose }: ActivityToolProps) {
     setDistance(geolocationService.getTotalDistance(routePoints));
     setShowSummary(true);
 
+    // Останавливаем live-пульс с кольца.
+    if (stopLiveHeartRateRef.current) {
+      stopLiveHeartRateRef.current();
+      stopLiveHeartRateRef.current = null;
+    }
+
+    // Если есть реальные калории из кольца/Health Connect — используем их.
+    if (hasRealCaloriesRef.current) {
+      const currentMetrics = getCachedHealthData();
+      const currentCalories = currentMetrics?.calories ?? 0;
+      const delta = currentCalories - caloriesAtStartRef.current;
+      if (delta > 0) {
+        realCaloriesRef.current = delta;
+        setCaloriesBurned(delta);
+      }
+    }
+
     if (routePoints.length > 0 || elapsedTime > 5) {
       const workout = {
         type: selectedType,
         date: new Date().toISOString(),
         duration: elapsedTime,
         distance: geolocationService.getTotalDistance(routePoints),
-        calories: Math.round(caloriesBurned),
+        calories: Math.round(realCaloriesRef.current > 0 ? realCaloriesRef.current : caloriesBurned),
         route: routePoints.map(p => ({ lat: p.lat, lng: p.lng })),
       };
       const saved = localStorage.getItem('ritual_workouts');
@@ -272,7 +346,7 @@ export default function ActivityTool({ onClose }: ActivityToolProps) {
 
   const finalTime = elapsedTime > 5 ? elapsedTime : 765;
   const finalDistance = distance > 0.05 ? distance : 0;
-  const finalCalories = caloriesBurned > 5 ? Math.round(caloriesBurned) : 0;
+  const finalCalories = realCaloriesRef.current > 5 ? Math.round(realCaloriesRef.current) : (caloriesBurned > 5 ? Math.round(caloriesBurned) : 0);
 
   const formatPace = (sec: number, km: number) => {
     if (km <= 0) return '—';

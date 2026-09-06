@@ -76,14 +76,21 @@ export default function RingConnectionWizard({ isOpen, onClose, onConnected }: R
       const connected = await bleRingService.connect(device.address, device.name);
       if (!connected) throw new Error('Кольцо не ответило. Поднесите его ближе, снимите с зарядки и попробуйте снова.');
 
-      setStage(1);
+      // Синхронизация выполняется в фоне — показываем «Кольцо готово» сразу.
       const info = await bleRingService.getDeviceInfo();
-      if (!info) throw new Error('Кольцо подключено, но сведения об устройстве пока недоступны. Повторите подключение.');
-
-      setStage(2);
-      setDeviceInfo(info);
+      const fallback: RingDeviceInfo = {
+        address: device.address,
+        name: device.name,
+        state: 'connected',
+        batteryLevel: -1,
+        firmwareVersion: null,
+        lastSync: null,
+        capabilities: [],
+      };
+      const deviceInfoResult = info ?? fallback;
+      setDeviceInfo(deviceInfoResult);
       try {
-        await onConnected?.(info);
+        await onConnected?.(deviceInfoResult);
       } catch (reason) {
         console.warn('Ring connected, but the first health refresh failed:', reason);
       }
