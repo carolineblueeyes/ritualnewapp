@@ -12,6 +12,8 @@ interface HealthScreenShellProps {
   /** Протокол 02.09: неделя/месяц — через разбор Rail (подписка). */
   periodsLocked?: boolean;
   onLockedPeriodClick?: () => void;
+  /** Сон: только дни, переключатель День/Неделя/Месяц скрыт. */
+  hidePeriods?: boolean;
 }
 
 const PERIODS: Array<{ id: HealthPeriod; label: string }> = [
@@ -28,9 +30,11 @@ export default function HealthScreenShell({
   children,
   periodsLocked,
   onLockedPeriodClick,
+  hidePeriods,
 }: HealthScreenShellProps) {
   return (
     <div className="flex flex-col gap-6 pb-4">
+      {!hidePeriods && (
       <div className="flex gap-1 p-1 rounded-full bg-white/[0.03] border border-white/[0.05]">
         {PERIODS.map(item => {
           const locked = periodsLocked && item.id !== 'day';
@@ -58,6 +62,7 @@ export default function HealthScreenShell({
           );
         })}
       </div>
+      )}
 
       <PeriodRing
         period={period}

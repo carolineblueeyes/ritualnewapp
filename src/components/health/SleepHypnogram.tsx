@@ -50,37 +50,38 @@ export default function SleepHypnogram({ summary }: SleepHypnogramProps) {
         <span>{formatClockTime(summary?.sleepEnd)}</span>
       </div>
 
-      <div className="relative h-28 rounded-xl bg-[#0B0C0E] border border-white/[0.04] overflow-hidden">
-        <div className="absolute inset-x-0 top-0 h-1/4 border-b border-white/[0.04]" />
-        <div className="absolute inset-x-0 top-1/4 h-1/4 border-b border-white/[0.04]" />
-        <div className="absolute inset-x-0 top-2/4 h-1/4 border-b border-white/[0.04]" />
-        <div className="absolute left-2 top-2 flex flex-col gap-[18px] text-[9px] text-[#F2EFE8]/28">
+      <div className="relative h-28 rounded-xl bg-[#0B0C0E] border border-white/[0.04] overflow-hidden flex">
+        <div className="w-11 shrink-0 flex flex-col justify-around py-2 pl-2.5 text-[9px] leading-none text-[#F2EFE8]/28">
           <span>REM</span>
           <span>Глуб.</span>
           <span>Лёгк.</span>
           <span>Бодр.</span>
         </div>
 
-        {segments.map((segment, index) => {
-          const level = STAGE_LEVEL[segment.stage] ?? 1;
-          const top = `${(3 - level) * 25 + 8}%`;
-          const height = '18%';
-          const color = SLEEP_STAGE_META[segment.stage]?.color ?? '#6B7280';
-          return (
-            <div
-              key={`${segment.stage}-${index}`}
-              className="absolute rounded-sm"
-              style={{
-                left: `${segment.left}%`,
-                width: `${segment.width}%`,
-                top,
-                height,
-                backgroundColor: color,
-                opacity: 0.92,
-              }}
-            />
-          );
-        })}
+        <div className="relative flex-1 my-2 mr-2 rounded-lg overflow-hidden">
+          <div className="absolute inset-x-0 top-0 h-1/4 border-b border-white/[0.04]" />
+          <div className="absolute inset-x-0 top-1/4 h-1/4 border-b border-white/[0.04]" />
+          <div className="absolute inset-x-0 top-2/4 h-1/4 border-b border-white/[0.04]" />
+
+          {segments.map((segment, index) => {
+            const level = STAGE_LEVEL[segment.stage] ?? 1;
+            const color = SLEEP_STAGE_META[segment.stage]?.color ?? '#6B7280';
+            return (
+              <div
+                key={`${segment.stage}-${index}`}
+                className="absolute rounded-sm"
+                style={{
+                  left: `${segment.left}%`,
+                  width: `${segment.width}%`,
+                  top: `calc(${(3 - level) * 25}% + 3px)`,
+                  height: 'calc(25% - 6px)',
+                  backgroundColor: color,
+                  opacity: 0.92,
+                }}
+              />
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">

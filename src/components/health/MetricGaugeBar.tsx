@@ -24,7 +24,7 @@ export default function MetricGaugeBar({
         style={{ width: `${widthPct}%`, backgroundColor: color, boxShadow: `0 0 12px ${color}66` }}
       >
         <span
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2 h-2 rounded-full"
+          className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
           style={{ backgroundColor: color, boxShadow: `0 0 10px ${color}` }}
           aria-hidden="true"
         />

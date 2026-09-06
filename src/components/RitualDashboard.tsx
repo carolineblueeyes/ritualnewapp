@@ -1554,7 +1554,7 @@ export default function RitualDashboard({
 
                 {healthSection === 'sleep' && (                  <div>
                     <HealthSleepScreen
-                      period={categoryPeriod}
+                      period="day"
                       onPeriodChange={setCategoryPeriod}
                       selectedDate={selectedHealthDate}
                       onSelectedDateChange={setSelectedHealthDate}
@@ -1563,8 +1563,10 @@ export default function RitualDashboard({
                       historySleep={historyByMetric.sleepHours}
                       accentColor={accentColor}
                       shine={shine}
-                      periodsLocked={!isSubscribed}
+                      periodsLocked={false}
                       onLockedPeriodClick={() => onOpenSubscription?.()}
+                      isSubscribed={isSubscribed}
+                      onOpenSubscription={() => onOpenSubscription?.()}
                     />
                   </div>
                 )}

@@ -198,11 +198,11 @@ interface StageBarProps {
 export function StageProgressBar({ label, minutes, total, color, tier }: StageBarProps) {
   const pct = total > 0 ? Math.round((minutes / total) * 100) : 0;
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex justify-between items-center gap-2">
-        <span className="text-[13px] text-[#F2EFE8]/50">{label}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] text-[#F2EFE8]/80 tabular-nums">
+    <div className="flex flex-col gap-2 min-w-0">
+      <div className="flex justify-between items-start gap-2">
+        <span className="text-[13px] text-[#F2EFE8]/50 shrink-0">{label}</span>
+        <div className="flex items-center justify-end gap-2 flex-wrap min-w-0">
+          <span className="text-[13px] text-[#F2EFE8]/80 tabular-nums text-right break-words">
             {Math.floor(minutes / 60)}ч {minutes % 60}м · {pct}%
           </span>
           {tier != null && <QualityBadge tier={tier} />}

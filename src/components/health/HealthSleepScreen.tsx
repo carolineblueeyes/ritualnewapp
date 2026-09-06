@@ -1,14 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Lock, Sparkles } from 'lucide-react';
 import type { ShineBreakdown } from '../../services/health/shine';
 import HealthScreenShell from './HealthScreenShell';
 import HealthHero from './HealthHero';
 import HealthGroup from './HealthGroup';
 import SleepHypnogram from './SleepHypnogram';
-import HealthPeriodChart, { StageProgressBar } from './HealthPeriodChart';
+import { StageProgressBar } from './HealthPeriodChart';
 import OvernightAreaChart from './OvernightAreaChart';
 import MetricInsightRow from './MetricInsightRow';
 import QualityBadge from './QualityBadge';
-import { formatDurationHours, formatDurationMinutes, formatClockTime, chartDayLabel, finiteOrNull } from './format';
+import { formatDurationHours, formatDurationMinutes, formatClockTime, finiteOrNull, shiftDate, todayIso, formatFriendlyDate } from './format';
 import {
   computeSleepScore,
   sleepScoreLabel,
@@ -57,20 +58,14 @@ interface HealthSleepScreenProps {
   shine?: ShineBreakdown;
   periodsLocked?: boolean;
   onLockedPeriodClick?: () => void;
+  isSubscribed?: boolean;
+  onOpenSubscription?: () => void;
 }
 
 const SLEEP_GOAL_MINUTES = 480;
 
-function historyToChart(points: DailyHealthPoint[], period: HealthPeriod) {
-  const slice = period === 'week' ? 7 : period === 'month' ? 30 : 1;
-  return points
-    .filter(p => p.status === 'available' && finiteOrNull(p.value) !== null)
-    .slice(-slice)
-    .map(point => ({ label: chartDayLabel(point.date), value: finiteOrNull(point.value) }));
-}
-
 export default function HealthSleepScreen({
-  period,
+  period: _period,
   onPeriodChange,
   selectedDate,
   onSelectedDateChange,
@@ -79,17 +74,19 @@ export default function HealthSleepScreen({
   historySleep,
   periodsLocked,
   onLockedPeriodClick,
+  isSubscribed,
+  onOpenSubscription,
 }: HealthSleepScreenProps) {
-  const { loading, selectedSummary, ringSummaries } = useHealthCategoryData({
+  const { loading, selectedSummary } = useHealthCategoryData({
     hasRing,
     selectedDate,
-    period,
+    period: 'day',
     historyByMetric: { sleepHours: historySleep } as HealthHistoryByMetric,
   });
 
-  const hrSeries = useRingSeries('heartRate', hasRing && period === 'day', 2);
-  const hrvSeries = useRingSeries('hrv', hasRing && period === 'day', 2);
-  const spo2Series = useRingSeries('spo2', hasRing && period === 'day', 2);
+  const hrSeries = useRingSeries('heartRate', hasRing, 2);
+  const hrvSeries = useRingSeries('hrv', hasRing, 2);
+  const spo2Series = useRingSeries('spo2', hasRing, 2);
 
   const summary = selectedSummary;
   const asleepMin = totalSleepMinutes(summary);
@@ -126,49 +123,6 @@ export default function HealthSleepScreen({
   const minHrv = minPointValue(overnightHrv);
   const maxHrv = maxPointValue(overnightHrv);
 
-  const weekMonthChart = useMemo(() => {
-    if (hasRing && ringSummaries.length > 1) {
-      return ringSummaries.map(item => ({
-        label: chartDayLabel(item.date),
-        value: finiteOrNull(item.sleepHours),
-      }));
-    }
-    return historyToChart(historySleep, period);
-  }, [hasRing, ringSummaries, historySleep, period]);
-
-  if (period !== 'day') {
-    const values = weekMonthChart.map(p => p.value).filter((v): v is number => v !== null);
-    const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
-    const avgTier = avg !== null ? qualitySleepDurationRatio(avg / (SLEEP_GOAL_MINUTES / 60)) : null;
-
-    return (
-      <HealthScreenShell
-        period={period}
-        onPeriodChange={onPeriodChange}
-        selectedDate={selectedDate}
-        onSelectedDateChange={onSelectedDateChange}
-        periodsLocked={periodsLocked}
-        onLockedPeriodClick={onLockedPeriodClick}
-      >
-        <HealthHero
-          value={avg !== null ? formatDurationHours(avg) : '—'}
-          meaning={period === 'week' ? 'Средняя длительность за неделю' : 'Средняя длительность за месяц'}
-        >
-          {avgTier != null && <QualityBadge tier={avgTier} />}
-        </HealthHero>
-        <HealthGroup padded>
-          <HealthPeriodChart
-            bare
-            points={weekMonthChart}
-            color="#8D4FFF"
-            formatValue={(v) => formatDurationHours(v).replace(' ', '')}
-            baseline={7.1}
-          />
-        </HealthGroup>
-      </HealthScreenShell>
-    );
-  }
-
   const durationRatio = asleepMin > 0 ? asleepMin / SLEEP_GOAL_MINUTES : null;
   const efficiency01 = efficiency !== null ? efficiency / 100 : null;
 
@@ -185,28 +139,129 @@ export default function HealthSleepScreen({
     };
   }, [historySleep]);
 
+  // Свайп по карточке оценки листает дни (как на скетче).
+  const touchStartX = useRef<number | null>(null);
+  const goDay = (delta: number) => {
+    const next = shiftDate(selectedDate, delta);
+    if (next > todayIso()) return;
+    onSelectedDateChange(next);
+  };
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const endX = e.changedTouches[0]?.clientX ?? touchStartX.current;
+    const dx = endX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(dx) < 48) return;
+    goDay(dx < 0 ? 1 : -1);
+  };
+
+  const railText = useMemo(() => {
+    if (!isSubscribed) return null;
+    const parts: string[] = [];
+    if (asleepHours !== null && asleepHours > 0) {
+      parts.push(`Спал ${formatDurationHours(asleepHours).replace(' ', '')} — ${scoreText.toLowerCase()}.`);
+    }
+    if (efficiency !== null) {
+      parts.push(efficiency >= 85 ? 'Эффективность высокая, ночь цельная.' : 'Ночь прерывистая, смотри на пробуждения.');
+    }
+    if (latency !== null) {
+      parts.push(latency <= 20 ? 'Засыпание быстрое.' : 'Засыпание затянуто — убери свет и экран за час.');
+    }
+    if (avgHrv !== null) {
+      parts.push(avgHrv >= 40 ? 'ВСР держится — восстановление идёт.' : 'ВСР снижена — сегодня мягкий ритм.');
+    }
+    if (!parts.length) return sleepDescription(summary, score);
+    return parts.join(' ');
+  }, [isSubscribed, asleepHours, scoreText, efficiency, latency, avgHrv, summary, score]);
+
+  const isToday = selectedDate === todayIso();
+
   return (
     <HealthScreenShell
-      period={period}
+      period="day"
       onPeriodChange={onPeriodChange}
       selectedDate={selectedDate}
       onSelectedDateChange={onSelectedDateChange}
       periodsLocked={periodsLocked}
       onLockedPeriodClick={onLockedPeriodClick}
+      hidePeriods
     >
-      <HealthHero
-        value={asleepHours !== null ? formatDurationHours(asleepHours) : '—'}
-        meaning={score !== null ? scoreText : 'Общий сон'}
-        eyebrow="Качество сна"
-        delta={sleepDelta?.text ?? null}
-        deltaColor={sleepDelta?.color}
-      >
-        {scoreTier != null && <QualityBadge tier={scoreTier} />}
-      </HealthHero>
+      {/* Заголовок Сон + стрелки дней */}
+      <div className="flex items-center justify-between px-1 -mb-2">
+        <div className="flex flex-col">
+          <h2 className="font-display text-[28px] font-light leading-none text-[#F2EFE8]">Сон</h2>
+          <span className="text-[13px] text-[#F2EFE8]/42 mt-1">{formatFriendlyDate(selectedDate)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Предыдущий день"
+            onClick={() => goDay(-1)}
+            className="w-9 h-9 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-[#F2EFE8]/60 active:scale-95 transition-transform"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Следующий день"
+            onClick={() => goDay(1)}
+            disabled={isToday}
+            className="w-9 h-9 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-[#F2EFE8]/60 active:scale-95 transition-transform disabled:opacity-30"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
 
-      <p className="text-[15px] text-[#F2EFE8]/55 leading-relaxed px-1">
-        {sleepDescription(summary, score)}
-      </p>
+      {/* Оценка сна — свайп листает дни */}
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className="rounded-[24px] border border-white/[0.06] bg-white/[0.02] px-4 pt-2 pb-4 touch-pan-y"
+      >
+        <div key={selectedDate} className="animate-section-fade">
+          <HealthHero
+            value={asleepHours !== null ? formatDurationHours(asleepHours) : '—'}
+            meaning={score !== null ? scoreText : 'Общий сон'}
+            eyebrow="Оценка сна"
+            delta={sleepDelta?.text ?? null}
+            deltaColor={sleepDelta?.color}
+          >
+            {scoreTier != null && <QualityBadge tier={scoreTier} />}
+          </HealthHero>
+        </div>
+        <p className="text-[15px] text-[#F2EFE8]/55 leading-relaxed px-1 text-center">
+          {sleepDescription(summary, score)}
+        </p>
+        <p className="text-[11px] text-[#F2EFE8]/25 text-center mt-2">Свайп влево / вправо — другой день</p>
+      </div>
+
+      {/* Расшифровка Rail */}
+      {isSubscribed ? (
+        <div className="rounded-[22px] border border-[#8D4FFF]/25 bg-[#8D4FFF]/[0.07] p-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#8D4FFF]" />
+            <span className="text-[13px] font-medium text-[#F2EFE8]/80">Разбор от Rail</span>
+          </div>
+          <p className="text-[14px] text-[#F2EFE8]/70 leading-relaxed mt-2">{railText}</p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onOpenSubscription?.()}
+          className="rounded-[22px] border border-amber-200/20 bg-amber-200/[0.06] p-4 text-left active:scale-[0.99] transition-transform"
+        >
+          <span className="flex items-center gap-1.5 text-[13px] font-medium text-amber-200/90">
+            <Lock className="w-3.5 h-3.5" /> Разбор от Rail
+          </span>
+          <span className="text-[13px] text-[#F2EFE8]/50 block mt-1 leading-relaxed">
+            Что хотел сон / что получил — расшифровка ночи, фазы и рекомендации. Открой с Rail.
+          </span>
+        </button>
+      )}
 
       <HealthGroup title="Фазы" padded>
         <SleepHypnogram summary={summary} />
