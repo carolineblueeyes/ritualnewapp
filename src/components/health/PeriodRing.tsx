@@ -183,13 +183,13 @@ export default function PeriodRing({
               onSelectedDateChange(item.id);
               requestAnimationFrame(() => scrollToSelected(true));
             }}
-            className={`snap-center shrink-0 min-w-[4.7rem] px-2 h-14 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-[color,background-color,transform] duration-[160ms] ease-out active:scale-[0.97] ${
+            className={`snap-center shrink-0 min-w-[4.7rem] px-2 h-14 rounded-full flex flex-col items-center justify-center gap-0.5 transition-[color,background-color,box-shadow,transform] duration-[160ms] ease-out active:scale-[0.97] ${
               active
-                ? 'bg-white/[0.10] text-[#F2EFE8]'
+                ? 'bg-[#F2EFE8] text-[#08090A] shadow-[0_0_24px_rgba(242,239,232,0.28)]'
                 : 'text-[#F2EFE8]/38'
             }`}
           >
-            <span className={`text-[10px] leading-none tracking-wide ${active ? 'text-[#F2EFE8]/55' : 'text-[#F2EFE8]/28'}`}>
+            <span className={`text-[10px] leading-none tracking-wide ${active ? 'text-[#08090A]/55' : 'text-[#F2EFE8]/28'}`}>
               {item.secondary}
             </span>
             <span className={`leading-none ${active ? 'font-display text-[22px] font-light' : 'text-[15px] font-medium tabular-nums'}`}>

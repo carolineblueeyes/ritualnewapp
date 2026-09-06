@@ -88,7 +88,7 @@ export default function HealthPeriodChart({
       <svg className="w-full h-36 overflow-hidden pointer-events-none" viewBox={`0 0 ${width} ${height}`}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+            <stop offset="0%" stopColor={color} stopOpacity="0.38" />
             <stop offset="100%" stopColor={color} stopOpacity="0.02" />
           </linearGradient>
         </defs>
@@ -131,11 +131,34 @@ export default function HealthPeriodChart({
             d={linePath}
             fill="none"
             stroke={color}
-            strokeWidth="1.75"
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.2"
+            style={{ filter: 'blur(6px)' }}
+          />
+        )}
+
+        {lineCoords.length > 1 && (
+          <path
+            d={linePath}
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
         )}
+
+        {lineCoords.length > 1 && (() => {
+          const last = lineCoords[lineCoords.length - 1];
+          return (
+            <g className="pointer-events-none">
+              <circle cx={last.x} cy={last.y} r="9" fill={color} opacity="0.22" />
+              <circle cx={last.x} cy={last.y} r="3.5" fill="#08090A" stroke={color} strokeWidth="2" />
+            </g>
+          );
+        })()}
 
         {coords.map((c, i) => {
           const showDate = i === 0 || i === coords.length - 1 || i % labelStride === 0;

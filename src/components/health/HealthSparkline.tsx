@@ -34,7 +34,7 @@ export default function HealthSparkline({
 
     const line = points.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x},${point.y}`).join(' ');
     const area = `${line} L${width},${height} L0,${height} Z`;
-    return { line, area, width };
+    return { line, area, width, last: points[points.length - 1] };
   }, [data, height]);
 
   if (!path) {
@@ -66,10 +66,22 @@ export default function HealthSparkline({
         d={path.line}
         fill="none"
         stroke={color}
+        strokeWidth="6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.22"
+        style={{ filter: 'blur(6px)' }}
+      />
+      <path
+        d={path.line}
+        fill="none"
+        stroke={color}
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+      <circle cx={path.last.x} cy={path.last.y} r="8" fill={color} opacity="0.22" />
+      <circle cx={path.last.x} cy={path.last.y} r="3" fill="#08090A" stroke={color} strokeWidth="2" />
     </svg>
   );
 }

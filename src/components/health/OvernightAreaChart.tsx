@@ -123,8 +123,17 @@ export default function OvernightAreaChart({
           )}
 
           <path d={chart.areaPath} fill={`url(#${gradientId})`} />
-          <path d={chart.linePath} fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={chart.linePath} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" opacity="0.2" style={{ filter: 'blur(6px)' }} />
+          <path d={chart.linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
+          {(() => {
+            const last = chart.coords[chart.coords.length - 1];
+            return (
+              <g className="pointer-events-none">
+                <circle cx={last.x} cy={last.y} r="9" fill={color} opacity="0.2" />
+              </g>
+            );
+          })()}
           {chart.coords.filter((_, i) => i === 0 || i === chart.coords.length - 1 || i % Math.max(1, Math.ceil(chart.coords.length / 5)) === 0).map((c, i) => (
             <g key={i}>
               <circle cx={c.x} cy={c.y} r="2.75" fill="#08090A" stroke={color} strokeWidth="1.5" />

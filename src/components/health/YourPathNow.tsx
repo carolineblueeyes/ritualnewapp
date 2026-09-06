@@ -20,17 +20,27 @@ interface YourPathNowProps {
   onOpenSection: (section: HealthSection) => void;
 }
 
-function Bar({ value, color, dashed }: { value: number; color: string; dashed?: boolean }) {
+function Bar({ value, color, dashed, glow }: { value: number; color: string; dashed?: boolean; glow?: boolean }) {
+  const widthPct = Math.max(0, Math.min(100, value));
   return (
-    <div className="h-1.5 flex-1 rounded-full bg-white/[0.06] overflow-hidden">
+    <div className="h-1 flex-1 rounded-full bg-white/[0.06]">
       <div
-        className="h-full rounded-full"
+        className="relative h-full rounded-full"
         style={{
-          width: `${Math.max(0, Math.min(100, value))}%`,
+          width: `${widthPct}%`,
           backgroundColor: color,
-          opacity: dashed ? 0.45 : 1,
+          opacity: dashed ? 0.4 : 1,
+          boxShadow: glow ? `0 0 12px ${color}66` : undefined,
         }}
-      />
+      >
+        {glow && widthPct > 2 && (
+          <span
+            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2 h-2 rounded-full"
+            style={{ backgroundColor: color, boxShadow: `0 0 10px ${color}` }}
+            aria-hidden="true"
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -58,7 +68,7 @@ export default function YourPathNow({ spheres, onOpenSection }: YourPathNowProps
                 <span className="text-[#F2EFE8]/35"> / {sphere.target}</span>
               </span>
             </div>
-            <Bar value={sphere.current ?? 0} color={sphere.color} />
+            <Bar value={sphere.current ?? 0} color={sphere.color} glow />
             <div className="flex items-center gap-2">
               <Bar value={sphere.target} color={sphere.color} dashed />
               <span className="text-[10px] text-[#F2EFE8]/30 whitespace-nowrap">цель</span>

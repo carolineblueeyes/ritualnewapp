@@ -100,35 +100,55 @@ export default function ShineTrendPanel({
   }, '').trim();
   const hasEnoughTrendData = scoredPoints.length >= 2;
   const selectedScore = currentSelectedDay.shineScore;
+  const prevScored = [...days]
+    .slice(0, selectedIndex)
+    .reverse()
+    .find(d => d.shineScore !== null);
+  const scoreDelta = selectedScore !== null && prevScored?.shineScore !== null && prevScored?.shineScore !== undefined
+    ? selectedScore - (prevScored.shineScore as number)
+    : null;
 
   return (
     <div className="flex flex-col gap-6 pt-2">
-      <div>
-        <span className="text-[13px] text-[#F2EFE8]/42">
+      <div className="flex flex-col items-center text-center gap-1.5">
+        <span className="text-[11px] tracking-[0.16em] uppercase text-[#F2EFE8]/35">
           {formatFriendlyDate(currentSelectedDay.dateStr, currentSelectedDay.isToday, currentSelectedDay.dayOfWeek)}
-          {selectedScore !== null ? ` · Сияние ${selectedScore}` : ''}
         </span>
-        <p className="mt-2 text-[15px] text-[#F2EFE8]/60 leading-relaxed">
+        <span className="font-display text-[64px] font-light tabular-nums leading-none tracking-tight" style={{ color: selectedScore !== null ? accentColor : undefined }}>
+          {selectedScore !== null ? selectedScore : <span className="text-[#F2EFE8]/25">—</span>}
+          {scoreDelta !== null && scoreDelta !== 0 && (
+            <span
+              className="font-sans text-[15px] font-medium tabular-nums align-top ml-1.5"
+              style={{ color: scoreDelta > 0 ? '#7BC67E' : '#E8685A' }}
+            >
+              {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta}
+            </span>
+          )}
+        </span>
+        <span className="text-[13px] text-[#F2EFE8]/42">Сияние дня · 0–100</span>
+        <p className="mt-1 text-[15px] text-[#F2EFE8]/60 leading-relaxed max-w-[300px]">
           {getShineAdvice(selectedScore)}
         </p>
       </div>
 
-      <div className="flex justify-center gap-8 border-b border-[rgba(242,239,232,0.12)]">
-        {(['7', '30', '90'] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onPeriodChange(key)}
-            className={`min-w-16 border-b py-3 text-[13px] font-medium transition-colors duration-[160ms] ${
-              period === key
-                ? 'border-current text-[#F2EFE8]/90'
-                : 'border-transparent text-[#F2EFE8]/42 hover:text-[#F2EFE8]/60'
-            }`}
-            style={period === key ? { color: accentColor, borderColor: accentColor } : undefined}
-          >
-            {key === '7' ? 'Неделя' : key === '30' ? '30 дней' : '90 дней'}
-          </button>
-        ))}
+      <div className="flex gap-1 p-1 rounded-full bg-white/[0.03] border border-white/[0.05]">
+        {(['7', '30', '90'] as const).map((key) => {
+          const active = period === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onPeriodChange(key)}
+              className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-all duration-[160ms] ease-out active:scale-[0.97] ${
+                active
+                  ? 'bg-[#F2EFE8] text-[#08090A] shadow-[0_0_20px_rgba(242,239,232,0.25)]'
+                  : 'text-[#F2EFE8]/42'
+              }`}
+            >
+              {key === '7' ? 'Неделя' : key === '30' ? '30 дней' : '90 дней'}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex justify-between items-center text-[13px] text-[#F2EFE8]/42">

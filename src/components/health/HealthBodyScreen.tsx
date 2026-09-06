@@ -135,6 +135,7 @@ export default function HealthBodyScreen({
       <HealthHero
         value={spo2 !== null ? Math.round(spo2) : '—'}
         meaning="Насыщение крови кислородом, %"
+        eyebrow="Кислород"
       >
         {spo2Tier != null && <QualityBadge tier={spo2Tier} />}
       </HealthHero>

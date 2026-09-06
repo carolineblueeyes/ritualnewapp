@@ -74,6 +74,18 @@ export default function HealthRecoveryScreen({
   const heartTier = heartScore !== null ? qualitySleepScore(heartScore) : null;
   const calmIndex = calmIndexFromHrv(hrvValue);
   const calmTier = calmIndex !== null ? qualityCalmIndex(calmIndex) : null;
+  const hrvDelta = useMemo(() => {
+    const pts = historyHrv
+      .filter(p => p.status === 'available' && finiteOrNull(p.value) !== null)
+      .slice(-2);
+    if (pts.length < 2) return null;
+    const diff = Math.round((pts[1].value as number) - (pts[0].value as number));
+    if (diff === 0) return null;
+    return {
+      text: `${diff > 0 ? '+' : ''}${diff} мс`,
+      color: diff > 0 ? '#7BC67E' : '#E8685A',
+    };
+  }, [historyHrv]);
 
   const chartCount = period === 'week' ? 7 : 30;
   const hrvChart = useMemo(() => {
@@ -141,6 +153,9 @@ export default function HealthRecoveryScreen({
       <HealthHero
         value={heartScore !== null ? heartScore : '—'}
         meaning={heartScore !== null ? 'Общая оценка сердца' : 'Покой · восстановление'}
+        eyebrow="Восстановление"
+        delta={hrvDelta?.text ?? null}
+        deltaColor={hrvDelta?.color}
       >
         {heartTier != null && <QualityBadge tier={heartTier} />}
       </HealthHero>

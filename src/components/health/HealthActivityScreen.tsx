@@ -59,6 +59,17 @@ export default function HealthActivityScreen({
   const workouts = selectedSummary?.workouts ?? [];
   const stepsTier = steps !== null ? qualitySteps(steps, STEPS_GOAL) : null;
 
+  const stepsDelta = useMemo(() => {
+    const pts = historySteps
+      .filter(p => p.status === 'available' && finiteOrNull(p.value) !== null)
+      .slice(-2);
+    if (pts.length < 2) return null;
+    const diff = Math.round((pts[1].value as number) - (pts[0].value as number));
+    if (diff === 0) return null;
+    const text = `${diff > 0 ? '+' : '−'}${Math.abs(diff).toLocaleString('ru-RU')}`;
+    return { text, color: diff > 0 ? '#7BC67E' : '#E8685A' };
+  }, [historySteps]);
+
   const chartCount = period === 'week' ? 7 : 30;
   const stepsChart = useMemo(() => {
     if (hasRing && ringSummaries.length > 1) {
@@ -113,6 +124,9 @@ export default function HealthActivityScreen({
       <HealthHero
         value={steps !== null ? steps.toLocaleString('ru-RU') : '—'}
         meaning="шагов"
+        eyebrow="Активность"
+        delta={stepsDelta?.text ?? null}
+        deltaColor={stepsDelta?.color}
       >
         {stepsTier != null && <QualityBadge tier={stepsTier} />}
         {steps !== null && (

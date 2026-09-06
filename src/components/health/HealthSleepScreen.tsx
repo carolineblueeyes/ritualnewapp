@@ -172,6 +172,19 @@ export default function HealthSleepScreen({
   const durationRatio = asleepMin > 0 ? asleepMin / SLEEP_GOAL_MINUTES : null;
   const efficiency01 = efficiency !== null ? efficiency / 100 : null;
 
+  const sleepDelta = useMemo(() => {
+    const pts = historySleep
+      .filter(p => p.status === 'available' && finiteOrNull(p.value) !== null)
+      .slice(-2);
+    if (pts.length < 2) return null;
+    const diffMin = Math.round(((pts[1].value as number) - (pts[0].value as number)) * 60);
+    if (diffMin === 0) return null;
+    return {
+      text: `${diffMin > 0 ? '+' : ''}${diffMin} мин`,
+      color: diffMin > 0 ? '#7BC67E' : '#E8685A',
+    };
+  }, [historySleep]);
+
   return (
     <HealthScreenShell
       period={period}
@@ -184,6 +197,9 @@ export default function HealthSleepScreen({
       <HealthHero
         value={asleepHours !== null ? formatDurationHours(asleepHours) : '—'}
         meaning={score !== null ? scoreText : 'Общий сон'}
+        eyebrow="Качество сна"
+        delta={sleepDelta?.text ?? null}
+        deltaColor={sleepDelta?.color}
       >
         {scoreTier != null && <QualityBadge tier={scoreTier} />}
       </HealthHero>
