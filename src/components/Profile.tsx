@@ -18,6 +18,7 @@ import RingConnectionWizard from './RingConnectionWizard';
 import { requestPrivacySafeSync, pullPreferencesFromSupabase } from '../services/supabase/privacySync';
 import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged, signOutAuth } from '../services/supabase/auth';
 import ProfileProductSettings from './ProfileProductSettings';
+import { APP_NAME, CORE_NAME, RAIL_NAME, STORE_URL } from '../constants/brand';
 import GlassSurface from './ui/GlassSurface';
 import SectionMeta from './ui/SectionMeta';
 
@@ -33,8 +34,8 @@ interface ProfileProps {
 }
 
 export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, onSignOut, onSyncMetrics, stats, healthSource, onRefreshHealth }: ProfileProps) {
-  const [userName, setUserName] = useState(() => localStorage.getItem('ritual_user_name') || 'Гость Ritual');
-  const [authDisplayName, setAuthDisplayName] = useState('Гость Ritual');
+  const [userName, setUserName] = useState(() => localStorage.getItem('ritual_user_name') || `Гость ${APP_NAME}`);
+  const [authDisplayName, setAuthDisplayName] = useState(`Гость ${APP_NAME}`);
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(userName);
   const [avatarUrl, setAvatarUrl] = useState(() => localStorage.getItem('ritual_avatar_data_url') || '');
@@ -176,8 +177,8 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
       referralHash = Math.imul(referralHash ^ (char.codePointAt(0) || 0), 16777619) >>> 0;
     }
     const code = referralHash.toString(36).slice(0, 8).toUpperCase();
-    const text = `Попробуй Ritual: https://ritual.app/invite/${code}`;
-    if (navigator.share) await navigator.share({ title: 'Попробуй Ritual', text }).catch(() => undefined);
+    const text = `Попробуй ${APP_NAME}: https://ritual.app/invite/${code}`;
+    if (navigator.share) await navigator.share({ title: `Попробуй ${APP_NAME}`, text }).catch(() => undefined);
     else await navigator.clipboard?.writeText(text);
   };
 
@@ -185,9 +186,9 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
     try {
       await signOutAuth();
       localStorage.removeItem('ritual_user_name');
-      setAuthDisplayName('Гость Ritual');
-      setUserName('Гость Ritual');
-      setTempName('Гость Ritual');
+      setAuthDisplayName(`Гость ${APP_NAME}`);
+      setUserName(`Гость ${APP_NAME}`);
+      setTempName(`Гость ${APP_NAME}`);
       onSignOut?.();
     } catch (error) {
       console.error('Failed to sign out', error);
@@ -225,13 +226,13 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
     if (bleRingService.isAvailable()) {
       const selected = discoveredDevices.find(device => device.mac === deviceAddress);
       setConnectingDevice('Соединяемся с кольцом');
-      const ok = await bleRingService.connect(deviceAddress, selected?.name || 'Ritual Ring');
+      const ok = await bleRingService.connect(deviceAddress, selected?.name || CORE_NAME);
       if (ok) {
         setConnectingDevice('Загружаем историю и проверяем датчики');
         setIsBleRingConnected(true);
         const info = await bleRingService.getDeviceInfo();
         setRingInfo(info);
-        setConnectedRingName(info?.name || selected?.name || 'Ritual Ring');
+        setConnectedRingName(info?.name || selected?.name || CORE_NAME);
         if (onRefreshHealth) onRefreshHealth();
       }
     } else {
@@ -335,7 +336,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
 
         {isSubscribed ? (
           <div className="py-1 px-3 rounded-full bg-white/[0.06] border border-white/10">
-            <span className="text-[10px] text-[#F2EFE8]/55 uppercase tracking-wider font-semibold">Ritual Plus</span>
+            <span className="text-[10px] text-[#F2EFE8]/55 uppercase tracking-wider font-semibold">{RAIL_NAME} активен</span>
           </div>
         ) : (
           <button
@@ -343,14 +344,14 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             className="w-full mt-3 h-11 rounded-xl bg-[#F2EFE8] text-[#08090A] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.97] transition-all flex items-center justify-center gap-2 text-[13px]"
           >
             <Shield className="w-3.5 h-3.5" />
-            <span>Ritual Plus</span>
+            <span>{RAIL_NAME}</span>
           </button>
         )}
       </GlassSurface>
 
       {/* Ritual Core sources */}
       <div className="flex flex-col gap-3">
-        <SectionMeta>Ritual Core</SectionMeta>
+        <SectionMeta>{CORE_NAME}</SectionMeta>
       <GlassSurface className="p-4 flex flex-col gap-3">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center">
@@ -369,7 +370,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
             <div className="flex flex-col text-left">
               <span className="text-[11px] text-white/60 font-medium">Поток активен</span>
               <span className="text-[10px] text-white/60">
-                {healthSource === 'ring' ? 'Кольцо Ritual' : 'Приложение здоровья'}
+                {healthSource === 'ring' ? CORE_NAME : 'Приложение здоровья'}
               </span>
             </div>
           </div>
@@ -477,7 +478,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
                 <Bluetooth className="w-4 h-4 text-white/40" />
               </div>
               <div className="flex flex-col">
-                <span className="text-xs font-medium text-white/60">Ritual Ring</span>
+                <span className="text-xs font-medium text-white/60">{CORE_NAME}</span>
                 <span className="text-[10px] text-white/50">
                   {isBleRingConnected ? connectedRingName : 'Bluetooth LE'}
                 </span>
@@ -555,7 +556,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
                 <div className="flex flex-col text-left">
                   <span className="text-xs font-medium text-[#e8e0d4]/80">Для полного опыта</span>
                   <span className="text-[10px] text-white/60 leading-relaxed">
-                    Кольцо Ritual измеряет ВСР, SpO₂, температуру и сон — автоматически, без телефонов.
+                    {CORE_NAME} измеряет ВСР, SpO₂, температуру и сон — автоматически, без телефонов.
                   </span>
                 </div>
               </div>
@@ -580,7 +581,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
           <span className="text-xs font-semibold text-white/80">Друзья и подарки</span>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => window.prompt('Введите подарочный код Ritual')} className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl flex flex-col items-start gap-1 text-left">
+          <button onClick={() => window.prompt(`Введите подарочный код ${APP_NAME}`)} className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl flex flex-col items-start gap-1 text-left">
             <Gift className="w-4 h-4 text-white/60" />
             <span className="text-xs font-semibold text-white/80 mt-1">Подарочный код</span>
             <span className="text-[10px] text-white/55 font-medium">Активировать Plus</span>
@@ -875,7 +876,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
               </div>
 
               <p className="text-[11px] text-white/40 leading-relaxed font-normal">
-                Разрешите Ritual читать данные здоровья для расчёта Индекса Сияния:
+                Разрешите {APP_NAME} читать данные здоровья для расчёта Сияния:
               </p>
 
               <div className="flex flex-col gap-2 bg-white/[0.02] border border-white/[0.04] rounded-xl p-3">
@@ -923,7 +924,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
               </div>
 
               <p className="text-[11px] text-white/40 leading-relaxed font-normal">
-                Разрешите Ritual читать данные здоровья Android:
+                Разрешите {APP_NAME} читать данные здоровья Android:
               </p>
 
               <div className="flex flex-col gap-2 bg-white/[0.02] border border-white/[0.04] rounded-xl p-3">
@@ -999,7 +1000,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
         onClose={() => setShowBleScanner(false)}
         onConnected={async info => {
           setIsBleRingConnected(true);
-          setConnectedRingName(info.name || 'Ritual Ring');
+          setConnectedRingName(info.name || CORE_NAME);
           setRingInfo(info);
           const summary = await bleRingService.getDailySummary();
           if (summary?.restingHR) setLivePulse(Math.round(summary.restingHR));

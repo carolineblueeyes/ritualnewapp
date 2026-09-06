@@ -1,5 +1,6 @@
 import { NotificationPayload, STORAGE_KEYS } from './notification.types';
 import { supabase } from '../supabase/client';
+import { APP_NAME } from '../../constants/brand';
 
 let initialized = false;
 let FirebaseMessaging: any = null;
@@ -36,46 +37,10 @@ function normalizeNotificationData(data?: Record<string, unknown>): Record<strin
   );
 }
 
-async function canUseExactAlarm(): Promise<boolean> {
-  if (!LocalNotifications?.checkExactNotificationSetting) return false;
-
-  try {
-    const result = await LocalNotifications.checkExactNotificationSetting();
-    const granted = Object.values(result ?? {}).some((value) => value === 'granted');
-    if (!granted) {
-      console.warn('[NotificationService] Exact alarms are not granted; scheduling inexact notifications instead');
-    }
-    return granted;
-  } catch (e) {
-    console.warn('[NotificationService] Exact alarm setting check failed:', e);
-    return false;
-  }
-}
-
-async function scheduleWithFallback(notification: any, prefersExact = false): Promise<void> {
-  const baseSchedule = notification.schedule ?? {};
-  const shouldUseExact = prefersExact && await canUseExactAlarm();
-
-  const schedule = {
-    ...baseSchedule,
-    ...(shouldUseExact ? { exact: true } : {}),
-  };
-
-  try {
-    await LocalNotifications.schedule({
-      notifications: [{ ...notification, schedule }],
-    });
-  } catch (exactError) {
-    if (!schedule.exact) throw exactError;
-
-    console.warn('[NotificationService] Failed to schedule exact notification, trying inexact:', exactError);
-    const fallbackSchedule = { ...schedule };
-    delete fallbackSchedule.exact;
-
-    await LocalNotifications.schedule({
-      notifications: [{ ...notification, schedule: fallbackSchedule }],
-    });
-  }
+async function scheduleNotification(notification: any): Promise<void> {
+  await LocalNotifications.schedule({
+    notifications: [notification],
+  });
 }
 
 async function loadPlugins(): Promise<boolean> {
@@ -203,9 +168,9 @@ async function requestPermission(): Promise<boolean> {
 }
 
 async function requestNotificationAccess(): Promise<boolean> {
-  const granted = await requestPermission();
+  const alreadyGranted = await checkPermission();
+  const granted = alreadyGranted || await requestPermission();
   if (granted) {
-    await promptExactAlarmSettingsIfNeeded();
     await registerForPush();
   }
   return granted;
@@ -379,16 +344,13 @@ async function scheduleLocal(payload: NotificationPayload, delaySeconds: number)
       },
     };
 
-    await scheduleWithFallback(
-      {
-        ...notificationConfig,
-        schedule: {
-          at: date,
-          allowWhileIdle: true,
-        },
+    await scheduleNotification({
+      ...notificationConfig,
+      schedule: {
+        at: date,
+        allowWhileIdle: true,
       },
-      true,
-    );
+    });
 
     rememberScheduledNotification({
       id,
@@ -409,7 +371,6 @@ async function scheduleLocal(payload: NotificationPayload, delaySeconds: number)
 async function scheduleAtDate(
   payload: NotificationPayload,
   at: Date,
-  prefersExact = true,
 ): Promise<number | null> {
   try {
     if (!await ensureReady()) return null;
@@ -430,16 +391,13 @@ async function scheduleAtDate(
       },
     };
 
-    await scheduleWithFallback(
-      {
-        ...notificationConfig,
-        schedule: {
-          at,
-          allowWhileIdle: true,
-        },
+    await scheduleNotification({
+      ...notificationConfig,
+      schedule: {
+        at,
+        allowWhileIdle: true,
       },
-      prefersExact,
-    );
+    });
 
     rememberScheduledNotification({
       id,
@@ -498,13 +456,10 @@ async function scheduleAtTime(
       scheduleOpts.allowWhileIdle = true;
     }
 
-    await scheduleWithFallback(
-      {
-        ...notificationConfig,
-        schedule: scheduleOpts,
-      },
-      !repeats,
-    );
+    await scheduleNotification({
+      ...notificationConfig,
+      schedule: scheduleOpts,
+    });
 
     rememberScheduledNotification({
       id,
@@ -549,22 +504,6 @@ async function cancelPendingOnChannel(managedTypes: Set<string>): Promise<void> 
   }
 }
 
-async function promptExactAlarmSettingsIfNeeded(): Promise<void> {
-  if (!LocalNotifications?.checkExactNotificationSetting) return;
-
-  try {
-    const result = await LocalNotifications.checkExactNotificationSetting();
-    const granted = Object.values(result ?? {}).some((value) => value === 'granted');
-    if (granted) return;
-
-    if (LocalNotifications.changeExactNotificationSetting) {
-      await LocalNotifications.changeExactNotificationSetting();
-    }
-  } catch (e) {
-    console.warn('[NotificationService] Exact alarm settings prompt failed:', e);
-  }
-}
-
 async function rescheduleAll(managedIds: number[], managedTypes: Set<string>): Promise<void> {
   await cancelPendingOnChannel(managedTypes);
   await cancelByIds(managedIds);
@@ -579,7 +518,7 @@ async function init(
     try {
       await LocalNotifications.createChannel({
         id: CHANNEL_ID,
-        name: 'Напоминания Ritual',
+        name: `Напоминания ${APP_NAME}`,
         description: 'Уведомления о практиках и напоминаниях серии дней',
         importance: 4,
         visibility: 1,
@@ -607,7 +546,6 @@ export const notificationService = {
   cancelById,
   cancelByIds,
   cancelPendingOnChannel,
-  promptExactAlarmSettingsIfNeeded,
   rescheduleAll,
   isNative,
   isNotificationsEnabled,

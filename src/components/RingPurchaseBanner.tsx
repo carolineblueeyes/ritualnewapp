@@ -1,4 +1,5 @@
 import React from 'react';
+import { CORE_NAME } from '../constants/brand';
 import { motion } from 'motion/react';
 import { ShoppingBag, Smartphone, X, ChevronRight } from 'lucide-react';
 
@@ -24,7 +25,7 @@ export default function RingPurchaseBanner({ source, onConnect, onBuyRing, onDis
             <ShoppingBag className="w-4 h-4 text-[#e8e0d4]/60" />
           </div>
           <div>
-            <span className="text-xs font-medium text-[#e8e0d4]/80 block">Полный опыт с кольцом Ritual</span>
+            <span className="text-xs font-medium text-[#e8e0d4]/80 block">Полный опыт с {CORE_NAME}</span>
             <span className="text-[10px] text-[#e8e0d4]/40">HRV, SpO₂, температура, сон — всё автоматически</span>
           </div>
         </div>

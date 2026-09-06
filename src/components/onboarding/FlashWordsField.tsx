@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 
 interface FlashWordsFieldProps {
@@ -7,14 +7,11 @@ interface FlashWordsFieldProps {
 }
 
 const POSITIONS = [
-  { top: '8%', left: '6%', rotate: -8 },
-  { top: '14%', right: '4%', rotate: 6 },
-  { top: '32%', left: '12%', rotate: -4 },
-  { top: '28%', right: '10%', rotate: 10 },
-  { top: '48%', left: '4%', rotate: 5 },
-  { top: '44%', right: '6%', rotate: -7 },
-  { top: '62%', left: '18%', rotate: -3 },
-  { top: '58%', right: '14%', rotate: 8 },
+  { top: '6%', left: '8%', rotate: -11 },
+  { top: '18%', right: '6%', rotate: 8 },
+  { top: '38%', left: '4%', rotate: -5 },
+  { top: '28%', right: '12%', rotate: 12 },
+  { top: '58%', left: '16%', rotate: 4 },
 ];
 
 export default function FlashWordsField({ words, onComplete }: FlashWordsFieldProps) {
@@ -25,40 +22,46 @@ export default function FlashWordsField({ words, onComplete }: FlashWordsFieldPr
     () => words.map((word, i) => ({
       word,
       ...POSITIONS[i % POSITIONS.length],
-      delay: i * 0.55,
+      delay: i * 0.7,
     })),
     [words],
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (reducedMotion) {
       onComplete?.();
       return;
     }
-    const timer = window.setTimeout(() => onComplete?.(), words.length * 550 + 800);
+    const timer = window.setTimeout(() => onComplete?.(), words.length * 700 + 900);
     return () => window.clearTimeout(timer);
-  }, [words.length, onComplete, reducedMotion]);
+    // Intentionally ignore onComplete identity — parent passes an inline setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [words.length, reducedMotion]);
 
   if (reducedMotion) {
     return (
-      <div className="flex flex-wrap gap-2 justify-center px-4">
+      <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center px-4">
         {words.map((word) => (
-          <span key={word} className="text-sm text-white/50">{word}</span>
+          <span key={word} className="text-[22px] text-[#F2EFE8]/45">{word}</span>
         ))}
       </div>
     );
   }
 
   return (
-    <div className="relative h-52 w-full max-w-sm mx-auto">
+    <div className="relative h-56 w-full max-w-sm mx-auto">
       {placements.map(({ word, delay, rotate, ...pos }) => (
         <motion.span
           key={word}
-          initial={{ opacity: 0, scale: 0.8, filter: 'blur(8px)' }}
-          animate={{ opacity: [0, 1, 0.72], scale: [0.8, 1.05, 1], filter: ['blur(8px)', 'blur(0px)', 'blur(0px)'] }}
-          transition={{ duration: 0.7, delay, ease: [0.16, 1, 0.3, 1] }}
-          className="absolute text-[15px] font-display text-white/55 tracking-wide"
-          style={{ ...pos, transform: `rotate(${rotate}deg)` }}
+          initial={{ opacity: 0, scale: 0.92, filter: 'blur(12px)' }}
+          animate={{
+            opacity: [0, 1, 0.38],
+            scale: [0.92, 1.04, 1],
+            filter: ['blur(12px)', 'blur(0px)', 'blur(0px)'],
+          }}
+          transition={{ duration: 1.05, delay, ease: [0.16, 1, 0.3, 1] }}
+          className="absolute text-[26px] font-display font-light text-[#F2EFE8] tracking-[-0.02em]"
+          style={{ ...pos, rotate: `${rotate}deg` }}
         >
           {word}
         </motion.span>

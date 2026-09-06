@@ -27,6 +27,7 @@ import BreathingTool from './components/BreathingTool';
 import ActivityTool from './components/ActivityTool';
 import FocusTool from './components/FocusTool';
 import AtmosphereTool from './components/AtmosphereTool';
+import { APP_NAME, RAIL_NAME } from './constants/brand';
 import VoiceAssistantOverlay from './components/VoiceAssistantOverlay';
 
 import { scheduleSessionComplete } from './services/notifications';
@@ -596,11 +597,11 @@ export default function App() {
 
   const handleShare = async () => {
     const message = shine.total > 0
-      ? `Моё Сияние сегодня — ${shine.total}%. Ritual помогает понимать состояние и управлять им.`
-      : 'Ritual — внимание к себе и практики для состояния.';
+      ? `Моё Сияние сегодня — ${shine.total}%. ${APP_NAME} помогает понимать состояние и управлять им.`
+      : `${APP_NAME} — внимание к себе и практики для состояния.`;
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
-        await navigator.share({ title: 'Ritual', text: message });
+        await navigator.share({ title: APP_NAME, text: message });
         return;
       } catch {
         // user cancelled
@@ -614,7 +615,7 @@ export default function App() {
   };
 
   return (
-    <div className="ritual-bentoless relative min-h-screen bg-[#08090A] text-[#F2EFE8] flex flex-col justify-between overflow-x-hidden font-sans">
+    <div className="ritual-bentoless relative min-h-screen bg-[#08090A] text-[#F2EFE8] flex flex-col justify-between overflow-x-hidden font-sans select-none">
       
       {/* Continuous canvas */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[#08090A]" />
@@ -655,7 +656,7 @@ export default function App() {
                   isSubscribed ? 'text-white/60 hover:text-white/80' : 'text-amber-400 hover:text-amber-300'
                 }`}
               >
-                {isSubscribed ? 'Plus' : 'Lite →'}
+                {isSubscribed ? RAIL_NAME : `${RAIL_NAME} →`}
               </button>
             )}
           </header>
