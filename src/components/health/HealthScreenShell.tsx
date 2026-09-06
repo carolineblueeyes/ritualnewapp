@@ -1,0 +1,56 @@
+import React from 'react';
+import type { HealthPeriod } from './types';
+import { alignDateToPeriod } from './format';
+import PeriodRing from './PeriodRing';
+
+interface HealthScreenShellProps {
+  period: HealthPeriod;
+  onPeriodChange: (period: HealthPeriod) => void;
+  selectedDate: string;
+  onSelectedDateChange: (date: string) => void;
+  children: React.ReactNode;
+}
+
+const PERIODS: Array<{ id: HealthPeriod; label: string }> = [
+  { id: 'day', label: 'День' },
+  { id: 'week', label: 'Неделя' },
+  { id: 'month', label: 'Месяц' },
+];
+
+export default function HealthScreenShell({
+  period,
+  onPeriodChange,
+  selectedDate,
+  onSelectedDateChange,
+  children,
+}: HealthScreenShellProps) {
+  return (
+    <div className="flex flex-col gap-6 pb-4">
+      <div className="flex gap-1 p-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
+        {PERIODS.map(item => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => {
+              onPeriodChange(item.id);
+              onSelectedDateChange(alignDateToPeriod(selectedDate, item.id));
+            }}
+            className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-colors duration-[160ms] ease-out active:scale-[0.97] ${
+              period === item.id ? 'bg-white/[0.10] text-[#F2EFE8]/92' : 'text-[#F2EFE8]/42'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <PeriodRing
+        period={period}
+        selectedDate={selectedDate}
+        onSelectedDateChange={onSelectedDateChange}
+      />
+
+      {children}
+    </div>
+  );
+}

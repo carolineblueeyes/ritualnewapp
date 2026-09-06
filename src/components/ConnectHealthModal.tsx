@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { X, Smartphone, ShoppingBag, Apple, ExternalLink } from 'lucide-react';
 import { healthService } from '../services/health/health.service';
+import { APP_NAME, CORE_NAME, STORE_URL } from '../constants/brand';
 
 interface ConnectHealthModalProps {
   isOpen: boolean;
@@ -44,7 +45,7 @@ export default function ConnectHealthModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 backdrop-blur-2xl flex items-center justify-center p-6 ritual-flow"
+      className="fixed inset-0 z-[210] backdrop-blur-2xl flex items-center justify-center p-6 ritual-flow"
       style={{ '--flow-color': '#9fb7ff' } as React.CSSProperties}
       onClick={onClose}
     >
@@ -73,9 +74,9 @@ export default function ConnectHealthModal({
         </div>
 
         <p className="text-[11px] text-white/60 leading-relaxed border-t border-white/[0.04] pt-4">
-          {platform === 'ios' && 'Ritual читает данные через Apple HealthKit в мобильном приложении. После разрешений мы синхронизируем только реальные дневные показатели.'}
-          {platform === 'android' && 'Ritual читает Android-данные через Health Connect. Google Fit, Samsung Health и другие приложения могут писать туда данные, а Ritual забирает их из Health Connect.'}
-          {platform === 'web' && 'Подключение Apple HealthKit и Health Connect доступно только в мобильном приложении Ritual.'}
+          {platform === 'ios' && `${APP_NAME} читает данные через Apple HealthKit в мобильном приложении. После разрешений мы синхронизируем только реальные дневные показатели.`}
+          {platform === 'android' && `${APP_NAME} читает Android-данные через Health Connect. Google Fit, Samsung Health и другие приложения могут писать туда данные, а ${APP_NAME} забирает их из Health Connect.`}
+          {platform === 'web' && `Подключение Apple HealthKit и Health Connect доступно только в мобильном приложении ${APP_NAME}.`}
         </p>
 
         <div className="flex flex-col gap-2.5">
@@ -91,7 +92,7 @@ export default function ConnectHealthModal({
             </button>
           ) : (
             <div className="border-y border-white/[0.08] py-3 text-[11px] text-white/60 leading-relaxed">
-              Откройте Ritual на телефоне, чтобы выдать системные разрешения и синхронизировать реальные данные.
+              Откройте {APP_NAME} на телефоне, чтобы выдать системные разрешения и синхронизировать реальные данные.
             </div>
           )}
 
@@ -127,16 +128,16 @@ export default function ConnectHealthModal({
 
         <div className="border-t border-white/[0.04] pt-4">
           <p className="text-[10px] text-white/60 leading-relaxed mb-3">
-            Для полного набора статистики можно подключить кольцо Ritual: HRV, SpO2, сон и температура будут собираться автоматически.
+            Для полного набора статистики можно подключить {CORE_NAME}: HRV, SpO2, сон и температура будут собираться автоматически.
           </p>
           <a
-            href="https://ritual.store"
+            href={STORE_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="w-full h-11 border-b border-white/[0.08] text-[#e6b85c] text-[11px] font-semibold active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
             <ShoppingBag className="w-4 h-4" />
-            Купить кольцо Ritual
+            Купить {CORE_NAME}
             <ExternalLink className="w-3 h-3 opacity-40" />
           </a>
         </div>

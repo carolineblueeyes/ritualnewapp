@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Sparkles,
   Apple,
   Smartphone,
   ArrowRight,
@@ -9,7 +8,6 @@ import {
   ShoppingBag,
   Loader2,
   Bluetooth,
-  BookOpen,
 } from 'lucide-react';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { healthService } from '../services/health/health.service';
@@ -17,42 +15,43 @@ import { clearHealthCache } from '../services/health/manager';
 import ConnectHealthModal from './ConnectHealthModal';
 import RingConnectionWizard from './RingConnectionWizard';
 import PracticeCrystal from './PracticeCrystal';
-import SilkShaderBackground from './SilkShaderBackground';
 import ThoughtSequence from './onboarding/ThoughtSequence';
 import FlashWordsField from './onboarding/FlashWordsField';
+import RailPreview from './onboarding/RailPreview';
+import ShineTodayPreview from './onboarding/ShineTodayPreview';
+import RitualsLibraryPreview from './onboarding/RitualsLibraryPreview';
+import SparkMark from './onboarding/SparkMark';
 import {
   getCurrentAuthSession,
   signInWithProvider,
 } from '../services/supabase/auth';
 import { ensureAnonymousSession } from '../services/supabase/client';
+import { APP_NAME, CORE_NAME, MANTRA_LINE_1, MANTRA_LINE_2, STORE_URL } from '../constants/brand';
 
 interface OnboardingProps {
   onComplete: () => void;
   onRefreshHealth?: () => void | Promise<void>;
 }
 
-const TOTAL_STEPS = 8;
-
 const ATTENTION_THOUGHTS = [
-  'То, чему уделяешь внимание, становится твоим состоянием.',
+  'То, куда направлено внимание, формирует состояние.',
   'Состояние определяет решения.',
-  'Решения формируют качество жизни.',
-  'Ritual помогает понимать своё состояние и управлять им.',
+  'Решения создают качество жизни.',
+  `${APP_NAME} — управление вниманием и состоянием.`,
 ];
 
 const RAIL_THOUGHTS = [
   'Привет. Я Rail.',
   'Я создан, чтобы помочь тебе лучше понимать себя.',
-  'Я анализирую сигналы организма, замечаю закономерности в твоём состоянии и предлагаю ритуалы, которые нужны именно сейчас.',
-  'Скажи: «Мне тревожно» — я предложу практику.',
+  'Скажи: «Мне тревожно» — я предложу ритуал.',
   'Скажи: «Нет сил» — помогу разобраться почему.',
   'Или поставь цель — больше спать, больше энергии, восстановление или хорошая форма.',
-  'Я помогу построить путь и буду сопровождать тебя каждый день.',
+  'Я анализирую сигналы твоего тела, замечаю закономерности в твоём состоянии — и строю для тебя уникальный путь к твоим целям.',
 ];
 
 const SHINE_THOUGHTS = [
   'Сияние отражает твоё состояние.',
-  'Один показатель помогает понять, как чувствует себя организм прямо сейчас.',
+  'Один показатель помогает понять, как чувствует себя тело прямо сейчас.',
 ];
 
 const PRACTICES_THOUGHTS = [
@@ -62,20 +61,11 @@ const PRACTICES_THOUGHTS = [
 
 const CRYSTAL_THOUGHTS = [
   'Кристалл отражает твой путь.',
-  'Он развивается.',
+  'Он развивается от ритуалов.',
   'Становится чище от практик и сияет от твоего состояния.',
 ];
 
-function StepProgress({ step }: { step: number }) {
-  if (step <= 0 || step >= TOTAL_STEPS) return null;
-  const label = String(step).padStart(2, '0');
-  const total = String(TOTAL_STEPS - 1).padStart(2, '0');
-  return (
-    <span className="absolute top-[max(1.25rem,env(safe-area-inset-top))] right-6 z-20 text-[11px] tracking-[0.2em] text-white/35 tabular-nums">
-      {label} / {total}
-    </span>
-  );
-}
+const FLASH_WORDS = ['Скроллинг.', 'Уведомления.', 'Чужие цели.', 'Сравнение.', 'Тревога.'];
 
 function PrimaryButton({
   children,
@@ -93,7 +83,7 @@ function PrimaryButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`w-full h-14 rounded-2xl bg-[#F2EFE8] text-[#08090A] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:active:scale-100 ${className}`}
+      className={`w-full h-14 rounded-2xl bg-[#F2EFE8] text-[#08090A] text-[17px] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.97] transition-transform duration-[160ms] flex items-center justify-center gap-2 disabled:opacity-40 disabled:active:scale-100 ${className}`}
     >
       {children}
     </button>
@@ -106,7 +96,7 @@ function TextButton({ children, onClick, disabled }: { children: React.ReactNode
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="text-center text-xs tracking-[0.18em] text-white/40 hover:text-white/60 uppercase disabled:opacity-40"
+      className="min-h-11 text-center text-[13px] tracking-[0.16em] text-white/40 hover:text-white/60 uppercase disabled:opacity-40"
     >
       {children}
     </button>
@@ -136,7 +126,7 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
     ? 'Apple Health'
     : healthPlatform === 'android'
       ? 'Health Connect'
-      : 'Мобильное приложение';
+      : 'Health Connect';
   const showAppleSignIn = healthPlatform === 'ios' || healthPlatform === 'web';
   const showAndroidSignIn = healthPlatform === 'android' || healthPlatform === 'web';
 
@@ -225,73 +215,91 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
 
   return (
     <div className="fixed inset-0 z-50 ritual-flow text-[#F2EFE8] flex flex-col overflow-hidden select-none">
-      <StepProgress step={step} />
-
       <AnimatePresence mode="wait">
         {step === 0 && (
           <motion.div
             key="splash"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0, scale: 1.02 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
             className="flex-1 flex flex-col items-center justify-center z-10 px-6"
           >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col items-center"
+            <motion.span
+              initial={{ opacity: 0, scale: 0.94, filter: 'blur(10px)' }}
+              animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+              transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+              className="font-display text-[48px] font-light tracking-[0.16em] text-[#F2EFE8]"
             >
-              <div className="w-[88px] h-[88px] rounded-full border border-white/10 flex items-center justify-center relative">
-                <div className="absolute inset-[-20%] rounded-full bg-[#C59A55]/15 blur-2xl" />
-                <span className="text-[42px] font-display text-[#F2EFE8] leading-none">R</span>
-              </div>
-              <h1 className="mt-8 text-[28px] font-display tracking-[0.35em] text-[#F2EFE8]">RITUAL</h1>
-            </motion.div>
+              {APP_NAME}
+            </motion.span>
           </motion.div>
         )}
 
         {step === 1 && (
           <motion.div
             key="signin"
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
+            exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
             className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
           >
             <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
-              <h2 className="text-[34px] leading-[1.08] font-display text-[#F2EFE8] text-balance">
-                Внимание к себе — это прекрасно.
-              </h2>
-              <p className="mt-5 text-[17px] leading-relaxed text-white/55 max-w-[300px]">
-                Всё начинается здесь.
+              <h1 className="font-display text-[32px] leading-[1.08] font-light text-[#F2EFE8] text-balance">
+                {MANTRA_LINE_1}
+              </h1>
+              <p className="mt-4 text-[17px] leading-relaxed text-white/55 max-w-[280px]">
+                {MANTRA_LINE_2}
               </p>
             </div>
 
             <div className="flex flex-col gap-3 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-              {showAppleSignIn && (
+              {showAppleSignIn && healthPlatform === 'ios' && (
                 <button
                   onClick={() => void handleProviderAuth('apple')}
                   disabled={authLoading}
-                  className="w-full h-14 rounded-2xl bg-[#F2EFE8] text-[#08090A] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-60"
+                  className="w-full h-14 rounded-2xl bg-[#F2EFE8] text-[#08090A] text-[17px] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.97] transition-transform duration-[160ms] flex items-center justify-center gap-3 disabled:opacity-60"
                 >
                   {authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Apple className="w-5 h-5 fill-current" />}
-                  <span>Продолжить с Apple</span>
+                  <span>Войти</span>
                 </button>
               )}
-              {showAndroidSignIn && (
+              {showAndroidSignIn && healthPlatform === 'android' && (
                 <button
                   onClick={() => void handleProviderAuth('google')}
                   disabled={authLoading}
-                  className="w-full h-14 rounded-2xl bg-white/[0.06] border border-white/12 text-[#F2EFE8] font-semibold hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-60"
+                  className="w-full h-14 rounded-2xl bg-[#F2EFE8] text-[#08090A] text-[17px] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.97] transition-transform duration-[160ms] flex items-center justify-center gap-3 disabled:opacity-60"
                 >
-                  <Smartphone className="w-5 h-5" />
-                  <span>Продолжить с Android</span>
+                  {authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Smartphone className="w-5 h-5" />}
+                  <span>Войти</span>
                 </button>
               )}
-              {authError && <p className="text-xs text-[#C56855] text-center leading-relaxed">{authError}</p>}
+              {healthPlatform === 'web' && (
+                <>
+                  {showAppleSignIn && (
+                    <button
+                      onClick={() => void handleProviderAuth('apple')}
+                      disabled={authLoading}
+                      className="w-full h-14 rounded-2xl bg-[#F2EFE8] text-[#08090A] text-[17px] font-semibold hover:bg-[#F2EFE8]/90 active:scale-[0.97] transition-transform duration-[160ms] flex items-center justify-center gap-3 disabled:opacity-60"
+                    >
+                      {authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Apple className="w-5 h-5 fill-current" />}
+                      <span>Войти с Apple</span>
+                    </button>
+                  )}
+                  {showAndroidSignIn && (
+                    <button
+                      onClick={() => void handleProviderAuth('google')}
+                      disabled={authLoading}
+                      className="w-full h-14 rounded-2xl bg-white/[0.06] border border-white/12 text-[#F2EFE8] text-[17px] font-semibold hover:bg-white/10 active:scale-[0.97] transition-transform duration-[160ms] flex items-center justify-center gap-3 disabled:opacity-60"
+                    >
+                      <Smartphone className="w-5 h-5" />
+                      <span>Войти с Android</span>
+                    </button>
+                  )}
+                </>
+              )}
+              {authError && <p className="text-[13px] text-[#C56855] text-center leading-relaxed">{authError}</p>}
               <TextButton onClick={() => void handleGuestAuth()} disabled={authLoading}>
                 продолжить без входа
               </TextButton>
@@ -306,20 +314,19 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.45 }}
-            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full overflow-y-auto hide-scrollbar"
+            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
           >
-            <div className="flex-1 flex flex-col justify-center pt-8">
+            <div className="flex-1 flex flex-col justify-center">
               <FlashWordsField
-                words={['Скроллинг.', 'Чужие цели.', 'Новости.', 'Давление.']}
+                words={FLASH_WORDS}
                 onComplete={() => setFlashDone(true)}
               />
-
-              <div className="mt-10 min-h-[180px]">
+              <div className="mt-8 min-h-[140px] flex items-center justify-center">
                 {flashDone && (
                   <ThoughtSequence
                     thoughts={ATTENTION_THOUGHTS}
                     pauseMs={2200}
-                    thoughtClassName="text-[22px] leading-[1.35] font-display text-[#F2EFE8] text-center px-2"
+                    thoughtClassName="text-[22px] leading-[1.35] font-display font-light text-[#F2EFE8] text-center px-2"
                     onComplete={() => setAttentionThoughtsDone(true)}
                   />
                 )}
@@ -342,40 +349,9 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.45 }}
-            className="flex-1 flex flex-col z-10 max-w-md mx-auto w-full"
+            className="flex-1 flex flex-col z-10 max-w-md mx-auto w-full relative"
           >
-            <div className="flex items-center justify-between px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
-                  <Sparkles className="h-4 w-4 text-[#C59A55]" />
-                </div>
-                <span className="text-sm font-medium text-[#F2EFE8]">Rail</span>
-              </div>
-            </div>
-
-            <div className="flex flex-1 flex-col items-center justify-center px-6 gap-8">
-              <div className="flex h-14 items-end justify-center gap-1">
-                {Array.from({ length: 9 }).map((_, index) => (
-                  <motion.div
-                    key={index}
-                    animate={{ height: [12, 18 + Math.sin(index * 0.9) * 14, 12] }}
-                    transition={{ duration: 1.8, repeat: Infinity, delay: index * 0.07, ease: 'easeInOut' }}
-                    className="w-[3px] rounded-full bg-[#F2EFE8]/35"
-                  />
-                ))}
-              </div>
-
-              <div className="min-h-[220px] w-full flex items-center justify-center">
-                <ThoughtSequence
-                  thoughts={RAIL_THOUGHTS}
-                  pauseMs={2400}
-                  initialDelay={600}
-                  thoughtClassName="text-[19px] leading-[1.45] font-display text-[#F2EFE8]/90 text-center px-1"
-                  onComplete={() => setRailThoughtsDone(true)}
-                />
-              </div>
-            </div>
-
+            <RailPreview thoughts={RAIL_THOUGHTS} onThoughtsComplete={() => setRailThoughtsDone(true)} />
             <div className="p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
               <PrimaryButton onClick={advance(4)} disabled={!railThoughtsDone}>
                 <span>Продолжить</span>
@@ -393,43 +369,7 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
             exit={{ opacity: 0 }}
             className="flex-1 flex flex-col z-10 max-w-md mx-auto w-full"
           >
-            <div className="relative flex-1 flex flex-col">
-              <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
-                <SilkShaderBackground accentColor="#C59A55" />
-                <div className="absolute inset-0 bg-gradient-to-b from-[#08090A]/20 via-transparent to-[#08090A]" />
-              </div>
-
-              <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-6 pt-10">
-                <span className="text-[11px] tracking-[0.22em] text-white/70 uppercase mb-6">Сегодня</span>
-
-                <div className="relative">
-                  <motion.div
-                    animate={{ scale: [1, 1.08, 1], opacity: [0.35, 0.55, 0.35] }}
-                    transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-                    className="absolute inset-[-40%] rounded-full bg-[#C59A55]/25 blur-3xl"
-                  />
-                  <motion.span
-                    initial={{ opacity: 0, scale: 0.92 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-                    className="relative text-[112px] leading-[0.85] font-display text-[#F2EFE8] tabular-nums"
-                  >
-                    82
-                  </motion.span>
-                </div>
-
-                <div className="mt-12 min-h-[100px] w-full max-w-[320px]">
-                  <ThoughtSequence
-                    thoughts={SHINE_THOUGHTS}
-                    pauseMs={2600}
-                    initialDelay={900}
-                    thoughtClassName="text-[20px] leading-[1.4] font-display text-[#F2EFE8]/85 text-center"
-                    onComplete={() => setShineThoughtsDone(true)}
-                  />
-                </div>
-              </div>
-            </div>
-
+            <ShineTodayPreview thoughts={SHINE_THOUGHTS} onThoughtsComplete={() => setShineThoughtsDone(true)} />
             <div className="relative z-10 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
               <PrimaryButton onClick={advance(5)} disabled={!shineThoughtsDone}>
                 <span>Продолжить</span>
@@ -445,38 +385,12 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col z-10 max-w-md mx-auto w-full overflow-hidden"
+            className="flex-1 flex flex-col z-10 max-w-md mx-auto w-full"
           >
-            <div className="px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4">
-              <div className="flex items-center gap-2 mb-6">
-                <BookOpen className="w-4 h-4 text-white/50" />
-                <span className="text-sm text-white/70">Библиотека практик</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 opacity-80 pointer-events-none">
-                {['Исток', 'Тишина', 'Энергия', 'Ясность'].map((name, i) => (
-                  <div
-                    key={name}
-                    className="h-24 rounded-xl border border-white/8 bg-white/[0.03] p-3 flex flex-col justify-end"
-                    style={{ opacity: 1 - i * 0.12 }}
-                  >
-                    <span className="text-sm font-medium text-[#F2EFE8]/80">{name}</span>
-                    <span className="text-[10px] text-white/40 mt-0.5">практики</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex-1 flex items-center px-6">
-              <ThoughtSequence
-                thoughts={PRACTICES_THOUGHTS}
-                pauseMs={2600}
-                initialDelay={500}
-                thoughtClassName="text-[20px] leading-[1.4] font-display text-[#F2EFE8] text-center"
-                onComplete={() => setPracticesThoughtsDone(true)}
-              />
-            </div>
-
+            <RitualsLibraryPreview
+              thoughts={PRACTICES_THOUGHTS}
+              onThoughtsComplete={() => setPracticesThoughtsDone(true)}
+            />
             <div className="p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
               <PrimaryButton onClick={advance(6)} disabled={!practicesThoughtsDone}>
                 <span>Продолжить</span>
@@ -495,6 +409,9 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
             className="flex-1 flex flex-col justify-between z-10 max-w-md mx-auto w-full p-6"
           >
             <div className="flex-1 flex flex-col items-center justify-center">
+              <h2 className="font-display text-[32px] leading-[1.08] font-light text-[#F2EFE8] text-center text-balance mb-8">
+                Твой прогресс обретает форму
+              </h2>
               <PracticeCrystal
                 facets={12}
                 color="#C59A55"
@@ -505,13 +422,12 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                 hasSparks
                 isPulsing
               />
-
-              <div className="mt-10 min-h-[120px] w-full">
+              <div className="mt-8 min-h-[120px] w-full">
                 <ThoughtSequence
                   thoughts={CRYSTAL_THOUGHTS}
                   pauseMs={2200}
-                  initialDelay={700}
-                  thoughtClassName="text-[20px] leading-[1.4] font-display text-[#F2EFE8] text-center"
+                  initialDelay={600}
+                  thoughtClassName="text-[17px] leading-[1.45] text-[#F2EFE8]/85 text-center"
                   onComplete={() => setCrystalThoughtsDone(true)}
                 />
               </div>
@@ -529,15 +445,15 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
         {step === 7 && (
           <motion.div
             key="health"
-            initial={{ opacity: 0, x: 20 }}
+            initial={{ opacity: 0, x: 16 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
+            exit={{ opacity: 0, x: -12 }}
             transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
+            className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full relative"
           >
             <div className="flex-1 flex flex-col justify-center gap-8">
-              <h2 className="text-[28px] leading-[1.15] font-display text-[#F2EFE8] text-center text-balance">
-                Чтобы понимать тебя точнее, подключи источник данных
+              <h2 className="font-display text-[32px] leading-[1.08] font-light text-[#F2EFE8] text-center text-balance">
+                Подключи источник данных
               </h2>
 
               <div className="flex flex-col gap-3">
@@ -548,16 +464,16 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                       setShowRingWizard(true);
                       return;
                     }
-                    window.open('https://ritual.store', '_blank');
+                    window.open(STORE_URL, '_blank');
                   }}
-                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left hover:bg-white/[0.07] active:scale-[0.99] transition-all"
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left hover:bg-white/[0.07] active:scale-[0.97] transition-transform duration-[160ms]"
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-[#74B6A0]/15 flex items-center justify-center flex-shrink-0">
                       <Bluetooth className="w-5 h-5 text-[#74B6A0]" />
                     </div>
                     <div>
-                      <p className="text-[15px] font-semibold text-[#F2EFE8]">Ritual Core</p>
+                      <p className="text-[17px] font-semibold text-[#F2EFE8]">{CORE_NAME}</p>
                       <p className="text-[13px] text-white/45 mt-1 leading-relaxed">Умное кольцо</p>
                     </div>
                   </div>
@@ -567,7 +483,7 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                   type="button"
                   onClick={() => void connectSource(healthSourceType)}
                   disabled={isHealthSyncing}
-                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left hover:bg-white/[0.07] active:scale-[0.99] transition-all disabled:opacity-50"
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left hover:bg-white/[0.07] active:scale-[0.97] transition-transform duration-[160ms] disabled:opacity-50"
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex items-center justify-center flex-shrink-0">
@@ -576,7 +492,7 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                         : <Activity className="w-5 h-5 text-[#F2EFE8]" />}
                     </div>
                     <div>
-                      <p className="text-[15px] font-semibold text-[#F2EFE8]">{healthSourceLabel}</p>
+                      <p className="text-[17px] font-semibold text-[#F2EFE8]">{healthSourceLabel}</p>
                       <p className="text-[13px] text-white/45 mt-1 leading-relaxed">Быстрый старт</p>
                     </div>
                   </div>
@@ -585,11 +501,11 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                 {healthPlatform !== 'android' && (
                   <button
                     type="button"
-                    onClick={() => window.open('https://ritual.store', '_blank')}
-                    className="w-full h-12 rounded-2xl border border-white/8 text-[13px] text-white/50 hover:text-white/70 flex items-center justify-center gap-2"
+                    onClick={() => window.open(STORE_URL, '_blank')}
+                    className="w-full min-h-12 rounded-2xl border border-white/8 text-[13px] text-white/50 hover:text-white/70 flex items-center justify-center gap-2"
                   >
                     <ShoppingBag className="w-4 h-4" />
-                    <span>Узнать о Ritual Core</span>
+                    <span>Узнать о {CORE_NAME}</span>
                   </button>
                 )}
               </div>
@@ -624,32 +540,18 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
         {step === 8 && (
           <motion.div
             key="final"
-            initial={{ opacity: 0, scale: 0.98 }}
+            initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
             className="flex-1 flex flex-col justify-between p-6 z-10 max-w-md mx-auto w-full"
           >
             <div className="flex-1 flex flex-col items-center justify-center text-center gap-8">
-              <div className="relative w-28 h-28 flex items-center justify-center">
-                <motion.div
-                  animate={{ scale: [1, 1.25, 1], opacity: [0.4, 0.75, 0.4] }}
-                  transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-                  className="absolute inset-0 rounded-full bg-[#C59A55]/30 blur-2xl"
-                />
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <Sparkles className="w-14 h-14 text-[#C59A55]" strokeWidth={1.5} />
-                </motion.div>
-              </div>
-
+              <SparkMark />
               <div className="space-y-4">
-                <p className="text-[32px] leading-[1.1] font-display text-[#F2EFE8]">
+                <h2 className="font-display text-[32px] leading-[1.08] font-light text-[#F2EFE8]">
                   Действие меняет жизнь
-                </p>
+                </h2>
                 <p className="text-[17px] text-white/55 leading-relaxed">
                   Путь начинается сегодня.
                 </p>
@@ -662,10 +564,10 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
                   type="checkbox"
                   checked={privacyConsent}
                   onChange={(event) => setPrivacyConsent(event.target.checked)}
-                  className="mt-0.5 accent-[#C59A55]"
+                  className="mt-0.5 accent-[#C59A55] w-5 h-5"
                 />
-                <span className="text-[11px] text-white/50 leading-relaxed">
-                  Я разрешаю Ritual обрабатывать дневные агрегаты здоровья для расчёта Сияния и персональных рекомендаций.
+                <span className="text-[13px] text-white/50 leading-relaxed">
+                  Я разрешаю {APP_NAME} обрабатывать дневные агрегаты здоровья для расчёта Сияния и персональных рекомендаций.
                 </span>
               </label>
               <PrimaryButton onClick={completeOnboarding} disabled={!privacyConsent}>
@@ -684,7 +586,7 @@ export default function Onboarding({ onComplete, onRefreshHealth }: OnboardingPr
         onConnected={() => {
           clearHealthCache();
           void Promise.resolve(onRefreshHealth?.()).catch((error) => {
-            console.warn('[Onboarding] Ritual Ring refresh failed:', error);
+            console.warn('[Onboarding] NŌW Core refresh failed:', error);
           });
         }}
       />

@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { EMPTY_METRICS, type HealthMetrics } from './types';
 import { X6Ring, type RingCandidate, type RingDailySummary, type RingDeviceInfo, type RingPoint, type RingDataType } from './x6RingPlugin';
+import { withMergedNightSleep } from '../../components/health/sleepUtils';
 
 const ADDRESS_KEY = 'ritual_ring_address';
 const CONNECTED_KEY = 'ritual_ble_ring_connected';
@@ -9,8 +10,15 @@ let connected = false;
 let deviceInfo: RingDeviceInfo | null = null;
 
 function ritualRingName(name?: string | null): string {
-  if (!name || /x6|2301/i.test(name)) return 'Ritual Ring';
+  if (!name || isRitualRingName(name)) return 'Ritual Ring';
   return name;
+}
+
+function isRitualRingName(name?: string | null): boolean {
+  const value = (name ?? '').toLowerCase();
+  if (!value) return false;
+  if (/2301|x6|x5|ritual|\bring\b|nōw|\bnow\b|colmi|jcring|j-?style|\bcore\b/.test(value)) return true;
+  return /\br\d{1,2}[a-z]?\b/.test(value) || /\bq\d{1,2}\b/.test(value) || /\bit\d{2,3}\b/.test(value);
 }
 
 function brandedInfo(info: RingDeviceInfo): RingDeviceInfo {
@@ -79,10 +87,11 @@ export const bleRingService = {
     if (!this.isAvailable()) return [];
     const permission = await X6Ring.getPermissionState();
     if (permission.bluetooth !== 'granted') await X6Ring.requestPermissions();
-    const result = await X6Ring.scan({ timeoutMs: 10_000 });
+    const result = await X6Ring.scan({ timeoutMs: 15_000 });
     return result.devices
-      .map(device => ({ ...device, name: device.recognized ? 'Ritual Ring' : ritualRingName(device.name) }))
-      .sort((a, b) => Number(b.recognized) - Number(a.recognized) || b.rssi - a.rssi);
+      .filter(device => device.recognized || isRitualRingName(device.name))
+      .map(device => ({ ...device, name: 'Ritual Ring', recognized: true }))
+      .sort((a, b) => b.rssi - a.rssi);
   },
 
   async connect(address: string, name = 'Ritual Ring'): Promise<boolean> {
@@ -188,10 +197,12 @@ export const bleRingService = {
     if (!this.isConnected()) return { ...EMPTY_METRICS, source: 'ring' };
     try {
       await this.sync();
-      const [summary, previousSummary] = await Promise.all([
+      const [rawToday, rawPrevious] = await Promise.all([
         X6Ring.getDailySummary({ date: today() }),
         X6Ring.getDailySummary({ date: dateDaysAgo(1) }).catch(() => null),
       ]);
+      const summary = withMergedNightSleep(rawToday) ?? rawToday;
+      const previousSummary = rawPrevious ? withMergedNightSleep(rawPrevious) : null;
       return {
         hrv: summary.hrv,
         sleepHours: selectRecentSleepHours(summary, previousSummary),

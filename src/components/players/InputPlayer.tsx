@@ -78,10 +78,9 @@ export default function InputPlayer({ color, variant = 'goals', practiceName, ho
                     onChange={(e) => handleGoalChange(index, e.target.value)}
                     placeholder={labels[index]}
                     disabled={saved}
-                    className="w-full pt-4 pb-2 bg-transparent border-b border-white/[0.08] focus:border-b-white/40 text-white text-sm outline-none transition-all placeholder:text-white/20 rounded-none"
+                    className="w-full pt-4 pb-2 bg-transparent border-b border-white/[0.08] focus:border-b-white/40 text-white text-sm font-sans outline-none transition-all placeholder:text-white/20 rounded-none"
                     style={{
                       borderColor: goals[index].trim() ? `${color}40` : 'rgba(255,255,255,0.08)',
-                      fontFamily: 'SF Pro Text, system-ui',
                     }}
                     onFocus={(e) => e.target.style.borderColor = `${color}60`}
                     onBlur={(e) => e.target.style.borderColor = goals[index].trim() ? `${color}40` : 'rgba(255,255,255,0.08)'}

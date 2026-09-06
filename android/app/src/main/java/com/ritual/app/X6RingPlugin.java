@@ -12,6 +12,7 @@ import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanRecord;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.ContentValues;
@@ -20,9 +21,11 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.ParcelUuid;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -48,6 +51,9 @@ import org.json.JSONObject;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,7 +78,15 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
     private static final String KEY_BATTERY = "battery";
     private static final String KEY_VERSION = "version";
     private static final String KEY_LAST_SYNC = "last_sync";
-    private static final String[] X6_NAMES = { "2301", "x6", "ritual", "ring" };
+    private static final String[] X6_NAMES = {
+        "2301", "x6", "x5", "ritual", "ring", "now", "nōw", "core",
+        "colmi", "jcring", "jstyle", "j-style",
+        "r02", "r03", "r06", "r07", "r08", "r10", "r12",
+        "q8", "q9", "q10",
+        "it109", "it115", "it120",
+        "v6", "v10"
+    };
+    private static final UUID RING_SERVICE_UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb");
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
@@ -86,6 +100,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
     private String syncFrom;
     private long syncStartedAt;
     private int sleepPacketCount;
+    private int sleepContinueCount;
     private boolean sleepSyncActive;
     private final Runnable sleepSyncTimeout = () -> finishSleepSyncPhase(false);
 
@@ -130,8 +145,11 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
 
     @PluginMethod
     public void requestPermissions(PluginCall call) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) requestPermissionForAliases(new String[]{"scan", "connect"}, call, "permissionsResult");
-        else requestPermissionForAlias("location", call, "permissionsResult");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requestPermissionForAliases(new String[]{"scan", "connect", "location"}, call, "permissionsResult");
+        } else {
+            requestPermissionForAlias("location", call, "permissionsResult");
+        }
     }
 
     @PermissionCallback
@@ -139,20 +157,33 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
 
     @PluginMethod
     public void scan(PluginCall call) {
-        if (!hasBluetoothPermissions()) { call.reject("Требуется разрешение Bluetooth"); return; }
+        if (!hasBluetoothPermissions()) { call.reject("Требуется разрешение Bluetooth и геолокации"); return; }
         if (!client.isBluetoothEnabled()) { call.reject("Bluetooth выключен"); return; }
+        if (!isLocationEnabled()) { call.reject("Включите геолокацию — без неё Android скрывает BLE-устройства"); return; }
         if (scanCall != null) scanCall.reject("Начато новое сканирование");
         scanCall = call;
         scanned.clear();
-        int timeout = Math.max(3000, Math.min(30000, call.getInt("timeoutMs", 10000)));
+        int timeout = Math.max(3000, Math.min(30000, call.getInt("timeoutMs", 15000)));
         client.scan(new X6GattClient.ScanListener() {
-            @Override public void onDevice(BluetoothDevice device, int rssi) {
-                String name = safeName(device);
-                JSObject item = new JSObject().put("name", name).put("address", device.getAddress()).put("rssi", rssi).put("nearby", rssi >= -70).put("recognized", isCompatibleName(name));
+            @Override public void onDevice(ScanResult result) {
+                if (!isRecognizedRing(result)) return;
+                BluetoothDevice device = result.getDevice();
+                String name = advertisedName(result);
+                JSObject item = new JSObject()
+                    .put("name", name.isEmpty() ? "Ritual Ring" : name)
+                    .put("address", device.getAddress())
+                    .put("rssi", result.getRssi())
+                    .put("nearby", result.getRssi() >= -70)
+                    .put("recognized", true);
                 scanned.put(device.getAddress(), item);
                 notifyListeners("scanResult", item, true);
             }
-            @Override public void onError(int code) { finishScan("Ошибка сканирования: " + code); }
+            @Override public void onError(int code) {
+                String message = code == -1
+                    ? "Bluetooth-сканер недоступен. Выключите и включите Bluetooth."
+                    : "Ошибка сканирования: " + code;
+                finishScan(message);
+            }
         });
         main.postDelayed(() -> finishScan(null), timeout);
     }
@@ -216,6 +247,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         syncFrom = call.getString("from", formatDeviceDate(System.currentTimeMillis() - 30L * 86400000L));
         syncStartedAt = System.currentTimeMillis();
         sleepPacketCount = 0;
+        sleepContinueCount = 0;
         sleepSyncActive = true;
         notifyListeners("syncProgress", new JSObject().put("progress", 5).put("step", "Подготовка"), true);
         client.enqueue(BleSDK.SetDeviceTime(new MyDeviceTime()));
@@ -306,11 +338,22 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         if (BleConst.GetDetailSleepData.equals(type) && sleepSyncActive) {
             sleepPacketCount++;
             main.removeCallbacks(sleepSyncTimeout);
-            main.postDelayed(sleepSyncTimeout, 15000);
             boolean finished = Boolean.parseBoolean(String.valueOf(maps.get(DeviceKey.End)));
-            if (finished) finishSleepSyncPhase(true);
-            else if (sleepPacketCount % 50 == 0) {
-                client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0x02, ""));
+            // End is per page. A brief night waking closes one sleep record; the next
+            // 4 hours arrive on later pages — keep requesting until the stream goes quiet.
+            if (finished) {
+                if (sleepContinueCount < 20) {
+                    sleepContinueCount++;
+                    client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0x02, ""));
+                    main.postDelayed(sleepSyncTimeout, 4000);
+                } else {
+                    finishSleepSyncPhase(true);
+                }
+            } else {
+                main.postDelayed(sleepSyncTimeout, 15000);
+                if (sleepPacketCount % 50 == 0) {
+                    client.enqueue(BleSDK.GetDetailSleepDataWithMode((byte) 0x02, ""));
+                }
             }
         }
         if (BleConst.GetDeviceBatteryLevel.equals(type) || BleConst.GetDeviceVersion.equals(type) || BleConst.GetDeviceName.equals(type) || BleConst.CMD_Get_Name.equals(type)) {
@@ -349,12 +392,60 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
     }
 
     private boolean hasBluetoothPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return getPermissionState("scan") == PermissionState.GRANTED && getPermissionState("connect") == PermissionState.GRANTED;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return getPermissionState("scan") == PermissionState.GRANTED
+                && getPermissionState("connect") == PermissionState.GRANTED
+                && getPermissionState("location") == PermissionState.GRANTED;
+        }
         return getPermissionState("location") == PermissionState.GRANTED;
     }
+    private boolean isLocationEnabled() {
+        LocationManager manager = (LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
+        if (manager == null) return true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return manager.isLocationEnabled();
+        return manager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+    }
     private String permissionLabel() { return hasBluetoothPermissions() ? "granted" : "prompt"; }
-    private static boolean isCompatibleName(String value) { String name = value.toLowerCase(Locale.ROOT); for (String candidate : X6_NAMES) if (name.contains(candidate)) return true; return false; }
-    @SuppressLint("MissingPermission") private static String safeName(BluetoothDevice d) { String name = d.getName(); return name == null || name.trim().isEmpty() ? "BLE устройство" : name; }
+    private static boolean isCompatibleName(String value) {
+        if (value == null || value.trim().isEmpty()) return false;
+        String name = value.toLowerCase(Locale.ROOT);
+        for (String candidate : X6_NAMES) if (name.contains(candidate)) return true;
+        return name.matches(".*\\br\\d{1,2}[a-z]?\\b.*") || name.matches(".*\\bq\\d{1,2}\\b.*") || name.matches(".*\\bit\\d{2,3}\\b.*");
+    }
+    private static String advertisedName(ScanResult result) {
+        ScanRecord record = result.getScanRecord();
+        String fromRecord = record != null ? record.getDeviceName() : null;
+        if (fromRecord != null && !fromRecord.trim().isEmpty()) return fromRecord.trim();
+        String fromDevice = result.getDevice().getName();
+        if (fromDevice != null && !fromDevice.trim().isEmpty()) return fromDevice.trim();
+        return "";
+    }
+    private static boolean isRecognizedRing(ScanResult result) {
+        if (isCompatibleName(advertisedName(result))) return true;
+        ScanRecord record = result.getScanRecord();
+        return record != null && hasRingUuid(record);
+    }
+    private static boolean hasRingUuid(ScanRecord record) {
+        List<ParcelUuid> uuids = record.getServiceUuids();
+        if (uuids != null) {
+            for (ParcelUuid uuid : uuids) {
+                if (uuid != null && RING_SERVICE_UUID.equals(uuid.getUuid())) return true;
+            }
+        }
+        if (record.getServiceData() != null) {
+            for (ParcelUuid uuid : record.getServiceData().keySet()) {
+                if (uuid != null && RING_SERVICE_UUID.equals(uuid.getUuid())) return true;
+            }
+        }
+        byte[] raw = record.getBytes();
+        if (raw != null) {
+            for (int i = 0; i < raw.length - 1; i++) {
+                if ((raw[i] & 0xFF) == 0xF0 && (raw[i + 1] & 0xFF) == 0xFF) return true;
+            }
+        }
+        return false;
+    }
     private static String formatDeviceDate(long time) { return new SimpleDateFormat("yyyy.MM.dd HH:mm:ss", Locale.US).format(new Date(time)); }
     private static String iso(long time) { SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US); f.setTimeZone(TimeZone.getDefault()); return f.format(new Date(time)); }
     private static JSObject toJs(Object value) { try { if (value instanceof Map) return JSObject.fromJSONObject(new JSONObject((Map<?, ?>) value)); return new JSObject().put("value", String.valueOf(value)); } catch (Exception e) { return new JSObject(); } }
@@ -367,7 +458,7 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
 
     private static final class X6GattClient {
         interface Listener { void onState(String state, String message); void onData(byte[] data); }
-        interface ScanListener { void onDevice(BluetoothDevice device, int rssi); void onError(int code); }
+        interface ScanListener { void onDevice(ScanResult result); void onError(int code); }
         private static final UUID SERVICE = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb");
         private static final UUID WRITE = UUID.fromString("0000fff6-0000-1000-8000-00805f9b34fb");
         private static final UUID NOTIFY = UUID.fromString("0000fff7-0000-1000-8000-00805f9b34fb");
@@ -381,11 +472,21 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         String getState() { return state; } String getAddress() { return address; } String getName() { return name == null ? "Ritual Ring" : name; }
         @SuppressLint("MissingPermission") void scan(ScanListener listener) {
             stopScan();
+            if (adapter == null || adapter.getBluetoothLeScanner() == null) {
+                listener.onError(-1);
+                return;
+            }
             scanCallback = new ScanCallback() {
-                @Override public void onScanResult(int callbackType, ScanResult result) { listener.onDevice(result.getDevice(), result.getRssi()); }
-                @Override public void onScanFailed(int errorCode) { listener.onError(errorCode); }
+                @Override public void onScanResult(int callbackType, ScanResult result) {
+                    main.post(() -> listener.onDevice(result));
+                }
+                @Override public void onBatchScanResults(List<ScanResult> results) {
+                    if (results == null) return;
+                    for (ScanResult result : results) main.post(() -> listener.onDevice(result));
+                }
+                @Override public void onScanFailed(int errorCode) { main.post(() -> listener.onError(errorCode)); }
             };
-            adapter.getBluetoothLeScanner().startScan(null, new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCallback);
+            adapter.getBluetoothLeScanner().startScan(null, new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).setReportDelay(0).build(), scanCallback);
         }
         @SuppressLint("MissingPermission") void stopScan() { if (adapter != null && adapter.getBluetoothLeScanner() != null && scanCallback != null) adapter.getBluetoothLeScanner().stopScan(scanCallback); scanCallback = null; }
         @SuppressLint("MissingPermission") void connect(String address, String name) {
@@ -433,14 +534,22 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         int countSince(long from) { try (Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM ring_records WHERE received_at>=?", new String[]{String.valueOf(from)})) { return c.moveToFirst() ? c.getInt(0) : 0; } }
         JSObject summary(String date, SharedPreferences prefs) {
             Summary s = new Summary(date);
-            String dottedDate = "%" + date.replace('-', '.') + "%";
-            String dashedDate = "%" + date + "%";
+            String prev = shiftIsoDate(date, -1);
+            String next = shiftIsoDate(date, 1);
             long dayStart;
             try { dayStart = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date).getTime(); } catch (Exception ignored) { dayStart = System.currentTimeMillis() - 86400000L; }
             long dayEnd = dayStart + 86400000L;
-            try (Cursor c = getReadableDatabase().rawQuery("SELECT payload,received_at FROM ring_records WHERE payload LIKE ? OR payload LIKE ? OR received_at BETWEEN ? AND ? ORDER BY received_at", new String[]{dottedDate, dashedDate, String.valueOf(dayStart), String.valueOf(dayEnd)})) {
+            String sql = "SELECT payload,received_at FROM ring_records WHERE payload LIKE ? OR payload LIKE ? OR payload LIKE ? OR payload LIKE ? OR payload LIKE ? OR payload LIKE ? OR received_at BETWEEN ? AND ? ORDER BY received_at";
+            String[] args = new String[]{
+                "%" + date.replace('-', '.') + "%", "%" + date + "%",
+                "%" + prev.replace('-', '.') + "%", "%" + prev + "%",
+                "%" + next.replace('-', '.') + "%", "%" + next + "%",
+                String.valueOf(dayStart - 36L * 3600000L), String.valueOf(dayEnd + 12L * 3600000L)
+            };
+            try (Cursor c = getReadableDatabase().rawQuery(sql, args)) {
                 while (c.moveToNext()) s.accept(c.getString(0), c.getLong(1));
             }
+            s.finalizeSleep();
             long last = prefs.getLong(KEY_LAST_SYNC, 0);
             return new JSObject().put("date", date).put("steps", s.steps).put("distance", s.distance).put("calories", s.calories).put("activeMinutes", s.activeMinutes)
                 .put("sleepHours", s.sleepMinutes == 0 ? null : s.sleepMinutes / 60.0).put("restingHR", s.hrAverage()).put("heartRateMin", s.hrMin == 999 ? null : s.hrMin)
@@ -450,6 +559,17 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
                 .put("sleepStart", s.sleepStart == Long.MAX_VALUE ? null : iso(s.sleepStart)).put("sleepEnd", s.sleepEnd == 0 ? null : iso(s.sleepEnd))
                 .put("sleepStages", s.sleepStageJson()).put("sleepIntervals", s.sleepIntervals).put("workouts", s.workouts)
                 .put("batteryLevel", prefs.getInt(KEY_BATTERY, -1)).put("lastSync", last == 0 ? null : iso(last));
+        }
+        private static String shiftIsoDate(String date, int days) {
+            try {
+                SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+                Calendar calendar = Calendar.getInstance();
+                calendar.setTime(format.parse(date));
+                calendar.add(Calendar.DATE, days);
+                return format.format(calendar.getTime());
+            } catch (Exception e) {
+                return date;
+            }
         }
         JSArray series(String type, long from, long to, String aggregation) {
             JSArray result = new JSArray(); String key = "heartRate".equals(type) ? "heartRate" : "spo2".equals(type) ? "Blood_oxygen" : "temperature".equals(type) ? "temperature" : "activity".equals(type) ? "step" : "sleep".equals(type) ? "sleepLength" : "hrv";
@@ -470,24 +590,144 @@ public class X6RingPlugin extends Plugin implements DataListener2301 {
         }
         private static <T> Iterable<T> iterable(java.util.Iterator<T> iterator) { return () -> iterator; }
         private static final class Summary {
+            static final long MERGE_GAP_MS = 120L * 60_000L;
             final String targetDate;
+            final long nightStart;
+            final long nightEnd;
             int steps, activeMinutes, sleepMinutes, hrMin=999, hrMax, hrCount, spo2Min=999, spo2Max;
             int awakeMinutes, lightMinutes, deepMinutes, remMinutes, unknownMinutes;
             double distance, calories, hrTotal, hrvTotal, spo2Total, tempTotal, tempMin=Double.MAX_VALUE, tempMax=-Double.MAX_VALUE;
             int hrvCount, spo2Count, tempCount; long sleepStart=Long.MAX_VALUE, sleepEnd;
             final JSArray sleepIntervals = new JSArray(); final JSArray workouts = new JSArray();
-            Summary(String targetDate) { this.targetDate = targetDate; }
+            final List<SleepSlice> rawSleep = new ArrayList<>();
+            Summary(String targetDate) {
+                this.targetDate = targetDate;
+                long dayStart;
+                try { dayStart = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(targetDate).getTime(); }
+                catch (Exception e) { dayStart = System.currentTimeMillis(); }
+                this.nightStart = dayStart - 6L * 3600000L; // previous day 18:00
+                long windowEnd = dayStart + 18L * 3600000L; // this day 18:00
+                String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+                if (targetDate.equals(today)) windowEnd = Math.max(windowEnd, System.currentTimeMillis());
+                this.nightEnd = windowEnd;
+            }
             void accept(String json, long receivedAt) { try { walk(new JSONObject(json)); } catch (Exception ignored) {} }
             void walk(Object value) throws Exception {
-                if (value instanceof JSONObject) { JSONObject o=(JSONObject)value; if (o.has("date")) { String itemDate=String.valueOf(o.opt("date")).replace('.','-'); if (!itemDate.startsWith(targetDate)) return; } add(o,"step",0); add(o,"distance",1); add(o,"calories",2); add(o,"heartRate",3); add(o,"hrv",4); add(o,"Blood_oxygen",5); add(o,"temperature",6); if (o.has("arraySleepQuality")) parseSleep(o); if (o.has("sportModel")) parseWorkout(o); for(String k:iterable(o.keys())) walk(o.get(k)); }
-                else if(value instanceof JSONArray){JSONArray a=(JSONArray)value;for(int i=0;i<a.length();i++)walk(a.get(i));}
+                if (value instanceof JSONObject) {
+                    JSONObject o = (JSONObject) value;
+                    boolean isSleep = o.has("arraySleepQuality");
+                    if (o.has("date") && !isSleep) {
+                        String itemDate = String.valueOf(o.opt("date")).replace('.', '-');
+                        if (!itemDate.startsWith(targetDate)) return;
+                    }
+                    add(o,"step",0); add(o,"distance",1); add(o,"calories",2); add(o,"heartRate",3); add(o,"hrv",4); add(o,"Blood_oxygen",5); add(o,"temperature",6);
+                    if (isSleep) parseSleep(o);
+                    if (o.has("sportModel")) parseWorkout(o);
+                    for (String k : iterable(o.keys())) walk(o.get(k));
+                } else if (value instanceof JSONArray) {
+                    JSONArray a = (JSONArray) value;
+                    for (int i = 0; i < a.length(); i++) walk(a.get(i));
+                }
             }
             void add(JSONObject o,String key,int kind){ if(!o.has(key))return; try{double v=Double.parseDouble(String.valueOf(o.get(key))); if(v<=0)return; switch(kind){case 0:steps=Math.max(steps,(int)v);break;case 1:distance=Math.max(distance,v);break;case 2:calories=Math.max(calories,v);break;case 3:hrTotal+=v;hrCount++;hrMin=Math.min(hrMin,(int)v);hrMax=Math.max(hrMax,(int)v);break;case 4:hrvTotal+=v;hrvCount++;break;case 5:spo2Total+=v;spo2Count++;spo2Min=Math.min(spo2Min,(int)v);spo2Max=Math.max(spo2Max,(int)v);break;case 6:tempTotal+=v;tempCount++;tempMin=Math.min(tempMin,v);tempMax=Math.max(tempMax,v);break;}}catch(Exception ignored){} }
-            void parseSleep(JSONObject o) { try { int unit=Math.max(1,o.optInt("sleepUnitLength",5)); String raw=String.valueOf(o.get("arraySleepQuality")); long cursor=parseTime(o.optString("date", targetDate+" 00:00:00")); String normalized=raw.replace("[","").replace("]","").trim(); if(normalized.isEmpty())return; for(String part:normalized.split("[,\\s]+")){ int code;try{code=Integer.parseInt(part.trim());}catch(Exception e){continue;} String stage=code==0?"awake":code==1?"light":code==2?"deep":code==3?"rem":"unknown"; int minutes=unit; if(code==0)awakeMinutes+=minutes;else{sleepMinutes+=minutes;if(code==1)lightMinutes+=minutes;else if(code==2)deepMinutes+=minutes;else if(code==3)remMinutes+=minutes;else unknownMinutes+=minutes;} long end=cursor+minutes*60000L; sleepStart=Math.min(sleepStart,cursor);sleepEnd=Math.max(sleepEnd,end);sleepIntervals.put(new JSObject().put("start",iso(cursor)).put("end",iso(end)).put("stage",stage));cursor=end;} } catch(Exception ignored){} }
+            void parseSleep(JSONObject o) {
+                try {
+                    int unit = Math.max(1, o.optInt("sleepUnitLength", 5));
+                    String raw = String.valueOf(o.get("arraySleepQuality"));
+                    long cursor = parseTime(o.optString("date", targetDate + " 00:00:00"));
+                    String normalized = raw.replace("[", "").replace("]", "").trim();
+                    if (normalized.isEmpty()) return;
+                    for (String part : normalized.split("[,\\s]+")) {
+                        int code;
+                        try { code = Integer.parseInt(part.trim()); } catch (Exception e) { continue; }
+                        String stage = code == 0 ? "awake" : code == 1 ? "light" : code == 2 ? "deep" : code == 3 ? "rem" : "unknown";
+                        long end = cursor + unit * 60000L;
+                        rawSleep.add(new SleepSlice(cursor, end, stage));
+                        cursor = end;
+                    }
+                } catch (Exception ignored) {}
+            }
+            void finalizeSleep() {
+                if (rawSleep.isEmpty()) return;
+                Collections.sort(rawSleep, Comparator.comparingLong(slice -> slice.start));
+                List<List<SleepSlice>> clusters = new ArrayList<>();
+                List<SleepSlice> current = new ArrayList<>();
+                for (SleepSlice slice : rawSleep) {
+                    if (slice.end <= nightStart || slice.start >= nightEnd) continue;
+                    if (current.isEmpty()) {
+                        current.add(slice);
+                        continue;
+                    }
+                    SleepSlice last = current.get(current.size() - 1);
+                    if (slice.start - last.end <= MERGE_GAP_MS) {
+                        if (slice.start > last.end) current.add(new SleepSlice(last.end, slice.start, "awake"));
+                        current.add(slice);
+                    } else {
+                        clusters.add(current);
+                        current = new ArrayList<>();
+                        current.add(slice);
+                    }
+                }
+                if (!current.isEmpty()) clusters.add(current);
+                if (clusters.isEmpty()) return;
+                List<SleepSlice> main = clusters.get(0);
+                int bestAsleep = asleepMinutes(main);
+                for (int i = 1; i < clusters.size(); i++) {
+                    int asleep = asleepMinutes(clusters.get(i));
+                    if (asleep > bestAsleep) {
+                        bestAsleep = asleep;
+                        main = clusters.get(i);
+                    }
+                }
+                List<SleepSlice> collapsed = collapseStages(main);
+                for (SleepSlice slice : collapsed) {
+                    int minutes = (int) Math.max(1, (slice.end - slice.start) / 60000L);
+                    if ("awake".equals(slice.stage)) awakeMinutes += minutes;
+                    else {
+                        sleepMinutes += minutes;
+                        if ("light".equals(slice.stage)) lightMinutes += minutes;
+                        else if ("deep".equals(slice.stage)) deepMinutes += minutes;
+                        else if ("rem".equals(slice.stage)) remMinutes += minutes;
+                        else unknownMinutes += minutes;
+                    }
+                    sleepStart = Math.min(sleepStart, slice.start);
+                    sleepEnd = Math.max(sleepEnd, slice.end);
+                    try {
+                        sleepIntervals.put(new JSObject().put("start", iso(slice.start)).put("end", iso(slice.end)).put("stage", slice.stage));
+                    } catch (Exception ignored) {}
+                }
+            }
+            static int asleepMinutes(List<SleepSlice> slices) {
+                int total = 0;
+                for (SleepSlice slice : slices) {
+                    if (!"awake".equals(slice.stage)) total += (int) Math.max(0, (slice.end - slice.start) / 60000L);
+                }
+                return total;
+            }
+            static List<SleepSlice> collapseStages(List<SleepSlice> slices) {
+                List<SleepSlice> result = new ArrayList<>();
+                for (SleepSlice slice : slices) {
+                    if (result.isEmpty()) {
+                        result.add(new SleepSlice(slice.start, slice.end, slice.stage));
+                        continue;
+                    }
+                    SleepSlice last = result.get(result.size() - 1);
+                    if (last.stage.equals(slice.stage) && slice.start <= last.end + 1000L) {
+                        last.end = Math.max(last.end, slice.end);
+                    } else {
+                        result.add(new SleepSlice(slice.start, slice.end, slice.stage));
+                    }
+                }
+                return result;
+            }
             void parseWorkout(JSONObject o) { try { workouts.put(new JSObject().put("start",iso(parseTime(o.optString("date",targetDate+" 00:00:00")))).put("type",o.optString("sportModel","activity")).put("durationMinutes",o.optInt("activeMinutes",o.optInt("sportTime",0))).put("calories",o.has("calories")?o.optDouble("calories"):null).put("heartRate",o.has("heartRate")?o.optDouble("heartRate"):null)); } catch(Exception ignored){} }
             long parseTime(String value) { for(String pattern:new String[]{"yyyy.MM.dd HH:mm:ss","yyyy-MM-dd HH:mm:ss","yyyy.MM.dd HH:mm","yyyy-MM-dd HH:mm","yyyy-MM-dd"})try{return new SimpleDateFormat(pattern,Locale.US).parse(value.replace('T',' ')).getTime();}catch(Exception ignored){}return System.currentTimeMillis(); }
             JSArray sleepStageJson(){JSArray result=new JSArray();result.put(new JSObject().put("stage","awake").put("minutes",awakeMinutes));result.put(new JSObject().put("stage","light").put("minutes",lightMinutes));result.put(new JSObject().put("stage","deep").put("minutes",deepMinutes));result.put(new JSObject().put("stage","rem").put("minutes",remMinutes));result.put(new JSObject().put("stage","unknown").put("minutes",unknownMinutes));return result;}
             Double round(double value){return Math.round(value*10.0)/10.0;} Double average(double total,int count){return count==0?null:round(total/count);} Double hrAverage(){return average(hrTotal,hrCount);}
+            static final class SleepSlice {
+                long start; long end; final String stage;
+                SleepSlice(long start, long end, String stage) { this.start = start; this.end = end; this.stage = stage; }
+            }
         }
     }
 }

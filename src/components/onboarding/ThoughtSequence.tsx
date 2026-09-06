@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ThoughtSequenceProps {
@@ -23,15 +23,34 @@ export default function ThoughtSequence({
   autoAdvance = true,
 }: ThoughtSequenceProps) {
   const [index, setIndex] = useState(-1);
+  const completedRef = useRef(false);
+  const skippedRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
   const reducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  const finish = useCallback(() => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+    onCompleteRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    completedRef.current = false;
+    skippedRef.current = false;
+    setIndex(-1);
+  }, [thoughts]);
 
   useEffect(() => {
     if (!autoAdvance || thoughts.length === 0) return;
 
     if (reducedMotion) {
       setIndex(thoughts.length - 1);
-      onComplete?.();
+      finish();
       return;
     }
 
@@ -39,9 +58,9 @@ export default function ThoughtSequence({
     let timer: number;
 
     const showNext = (next: number) => {
-      if (cancelled) return;
+      if (cancelled || skippedRef.current) return;
       if (next >= thoughts.length) {
-        onComplete?.();
+        finish();
         return;
       }
       setIndex(next);
@@ -53,7 +72,14 @@ export default function ThoughtSequence({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [thoughts, initialDelay, pauseMs, onComplete, autoAdvance, reducedMotion]);
+  }, [thoughts, initialDelay, pauseMs, autoAdvance, reducedMotion, finish]);
+
+  const skipRemaining = () => {
+    if (thoughts.length === 0) return;
+    skippedRef.current = true;
+    setIndex(thoughts.length - 1);
+    finish();
+  };
 
   if (reducedMotion) {
     return (
@@ -66,14 +92,26 @@ export default function ThoughtSequence({
   }
 
   return (
-    <div className={className}>
+    <div
+      className={className}
+      onClick={skipRemaining}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          skipRemaining();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label="Пропустить паузы"
+    >
       <AnimatePresence mode="wait">
         {index >= 0 && index < thoughts.length && (
           <motion.p
             key={index}
-            initial={{ opacity: 0, y: 10, filter: 'blur(6px)' }}
+            initial={{ opacity: 0, y: 8, filter: 'blur(8px)' }}
             animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -6, filter: 'blur(4px)' }}
+            exit={{ opacity: 0, y: -6, filter: 'blur(6px)' }}
             transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
             className={thoughtClassName}
           >

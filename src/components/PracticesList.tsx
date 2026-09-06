@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { APP_NAME } from '../constants/brand';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wind, Activity, Compass, Volume2, Heart, FlaskConical } from 'lucide-react';
 import { Practice } from '../types';
@@ -168,7 +169,7 @@ export default function PracticesList({
                   <FlaskConical className="w-4 h-4 text-[#7dd3fc]/80" />
                 </div>
                 <div className="text-left">
-                  <p className="text-[15px] font-semibold text-[#F2EFE8]/90">Ritual Insights</p>
+                  <p className="text-[15px] font-semibold text-[#F2EFE8]/90">{APP_NAME} Insights</p>
                   <p className="text-[11px] text-[#F2EFE8]/42 mt-0.5">Исследования внимания и состояния</p>
                 </div>
               </GlassSurface>

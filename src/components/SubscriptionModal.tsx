@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
+import { APP_NAME, RAIL_NAME } from '../constants/brand';
 import { X, Sparkles, Check, Heart, Shield } from 'lucide-react';
 
 interface SubscriptionModalProps {
@@ -44,10 +45,10 @@ export default function SubscriptionModal({ onClose, onSubscribe }: Subscription
             <Sparkles className="w-6 h-6" />
           </div>
           <h3 className="text-xl font-semibold text-white tracking-tight mt-1">
-            Включи все возможности Ritual Plus
+            Подписаться на {RAIL_NAME}
           </h3>
           <p className="text-xs text-white/40 max-w-xs">
-            Полный доступ ко всей библиотеке практик, расширенная персонализация ИИ и все главы «Пути внимания».
+            Анализ сигналов тела, персональные планы и полный контекст для твоих целей.
           </p>
         </div>
 
@@ -76,7 +77,7 @@ export default function SubscriptionModal({ onClose, onSubscribe }: Subscription
           <div className="mt-2 border-y border-[#ffb020]/18 py-3 flex items-center gap-2.5">
             <Heart className="w-4 h-4 text-[#ffb020] fill-[#ffb020]/20" />
             <span className="text-[11px] text-[#ffe0a3]/80 font-mono tracking-wide uppercase">
-              10% прибыли Ritual направляет на благотворительность
+              10% прибыли {APP_NAME} направляет на благотворительность
             </span>
           </div>
         </div>

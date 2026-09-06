@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.ritual.app',
-  appName: 'Ritual',
+  appName: 'NŌW',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
