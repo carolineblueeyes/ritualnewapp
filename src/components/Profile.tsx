@@ -20,7 +20,7 @@ import { getAuthDisplayName, getCurrentAuthUser, onAuthChanged, signOutAuth } fr
 import ProfileProductSettings from './ProfileProductSettings';
 import { APP_NAME, CORE_NAME, RAIL_NAME, STORE_URL } from '../constants/brand';
 import GlassSurface from './ui/GlassSurface';
-import SectionMeta from './ui/SectionMeta';
+
 
 interface ProfileProps {
   onOpenSubscription: () => void;
@@ -351,7 +351,7 @@ export default function Profile({ onOpenSubscription, isSubscribed, onResetAll, 
 
       {/* Ritual Core sources */}
       <div className="flex flex-col gap-3">
-        <SectionMeta>{CORE_NAME}</SectionMeta>
+        <p className="text-[13px] text-[#F2EFE8]/42 px-1">{CORE_NAME}</p>
       <GlassSurface className="p-4 flex flex-col gap-3">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center">

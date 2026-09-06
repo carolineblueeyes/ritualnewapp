@@ -8,7 +8,6 @@ import ProgressJournal from './ProgressJournal';
 import { deriveRealStats, normalizeHistoryDate } from '../services/progressStats';
 import PracticeCrystal from './PracticeCrystal';
 import GlassSurface from './ui/GlassSurface';
-import SectionMeta from './ui/SectionMeta';
 
 interface StatsPanelProps {
   stats: UserStats;
@@ -249,10 +248,10 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
   };
 
   return (
-    <div className="w-full select-none pb-24 text-[#F2EFE8]">
+    <div className="w-full flex flex-col gap-8 select-none pb-24 text-[#F2EFE8]">
 
       {/* Editorial conclusion + streak hero */}
-      <section className="pt-2 pb-8 flex flex-col gap-6">
+      <section className="pt-2 flex flex-col gap-6 px-1">
         <p className="font-display text-[28px] font-light leading-[1.12] text-[#F2EFE8]/92 text-balance">
           {rhythmText}
         </p>
@@ -268,17 +267,14 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
       </section>
 
       {/* 4-week trend */}
-      <section className="py-8 border-t border-[rgba(242,239,232,0.12)]">
-        <SectionMeta>Ритм за 4 недели</SectionMeta>
-        <div className="mt-5">
-          <WeeklyTrendChart data={trendData} accent={crystalScheme.color} />
-        </div>
+      <section className="flex flex-col gap-5">
+        <p className="text-[13px] text-[#F2EFE8]/42 px-1">Ритм за 4 недели</p>
+        <WeeklyTrendChart data={trendData} accent={crystalScheme.color} />
       </section>
 
       {/* Summary stats — hairline row */}
-      <section className="py-8 border-t border-[rgba(242,239,232,0.12)]">
-        <SectionMeta>Сводка</SectionMeta>
-        <div className="mt-5 grid grid-cols-3 divide-x divide-[rgba(242,239,232,0.12)]">
+      <section className="flex flex-col gap-5">
+        <div className="grid grid-cols-3 divide-x divide-[rgba(242,239,232,0.12)]">
           <div className="pr-4">
             <span className="text-[13px] text-[#F2EFE8]/42 block">Время</span>
             <span className="font-display text-4xl font-light tabular-nums mt-2 block">{totalMinutesLabel}</span>
@@ -298,7 +294,7 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
       </section>
 
       {/* Crystal hero */}
-      <section className="relative py-10 border-t border-[rgba(242,239,232,0.12)] flex flex-col items-center text-center">
+      <section className="relative py-4 flex flex-col items-center text-center">
         <button
           type="button"
           onClick={() => setShowCrystalInfo(true)}
@@ -336,18 +332,16 @@ export default function StatsPanel({ stats, practices, onAddMinutes }: StatsPane
       </section>
 
       {/* Path nodes overview */}
-      <section className="py-8 border-t border-[rgba(242,239,232,0.12)]">
-        <SectionMeta>Путь внимания</SectionMeta>
-        <div className="mt-5">
-          <PathNodes completedLevelIds={completedLevelIds} />
-        </div>
+      <section className="flex flex-col gap-5">
+        <p className="text-[13px] text-[#F2EFE8]/42 px-1">Путь внимания</p>
+        <PathNodes completedLevelIds={completedLevelIds} />
       </section>
 
       <ProgressJournal stats={realStats} />
 
       {/* Chapter drill-down */}
-      <section className="py-8 border-t border-[rgba(242,239,232,0.12)]">
-        <SectionMeta>Уровни</SectionMeta>
+      <section className="flex flex-col">
+        <p className="text-[13px] text-[#F2EFE8]/42 px-1 pb-2">Уровни</p>
         {CHAPTER_ORDER.map((chapId) => {
           const chap = chaptersData[chapId];
           const isExpanded = activeChapter === chapId;

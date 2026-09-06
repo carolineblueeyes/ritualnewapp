@@ -61,6 +61,7 @@ function getManagedReminderIds(): number[] {
     ...slotIds,
     stableNotificationId('streak-warning'),
     stableNotificationId('intention-reminder'),
+    stableNotificationId('morning-checkin'),
   ];
 }
 
@@ -320,6 +321,30 @@ export async function scheduleIntentionReminder(): Promise<void> {
   );
 }
 
+/**
+ * Протокол 02.09: утренний пуш после пробуждения — «проверить спокойствие»:
+ * замерить пульс и ВСР (самая честная точка суток).
+ */
+export async function scheduleMorningCheckin(): Promise<void> {
+  const now = new Date();
+  const wakeTime = localStorage.getItem('ritual_wake_time') || '07:30';
+  const targetTime = new Date(`${now.toISOString().split('T')[0]}T${wakeTime}:00`);
+  if (targetTime <= now) {
+    targetTime.setDate(targetTime.getDate() + 1);
+  }
+  const delay = (targetTime.getTime() - now.getTime()) / 1000;
+  await notificationService.scheduleLocal(
+    {
+      id: stableNotificationId('morning-checkin'),
+      type: NotificationType.HealthInsight,
+      title: 'Доброе утро — как спокойствие?',
+      body: 'Проснулся? Замерь пульс и ВСР — отметим утреннее спокойствие.',
+      data: { screen: 'Dashboard', section: 'recovery' },
+    },
+    delay,
+  );
+}
+
 export async function rescheduleAll(): Promise<void> {
   if (reschedulePromise) return reschedulePromise;
 
@@ -331,6 +356,7 @@ export async function rescheduleAll(): Promise<void> {
     await scheduleTimelineReminders();
     await scheduleStreakReminder();
     await scheduleIntentionReminder();
+    await scheduleMorningCheckin();
   })().finally(() => {
     reschedulePromise = null;
   });

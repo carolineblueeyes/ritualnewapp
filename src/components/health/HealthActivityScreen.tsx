@@ -23,6 +23,8 @@ interface HealthActivityScreenProps {
   healthMetrics: HealthMetrics;
   historySteps: DailyHealthPoint[];
   accentColor: string;
+  periodsLocked?: boolean;
+  onLockedPeriodClick?: () => void;
 }
 
 function toChart(points: DailyHealthPoint[], count: number) {
@@ -40,6 +42,8 @@ export default function HealthActivityScreen({
   hasRing,
   healthMetrics,
   historySteps,
+  periodsLocked,
+  onLockedPeriodClick,
 }: HealthActivityScreenProps) {
   const { selectedSummary, ringSummaries } = useHealthCategoryData({
     hasRing,
@@ -77,6 +81,8 @@ export default function HealthActivityScreen({
         onPeriodChange={onPeriodChange}
         selectedDate={selectedDate}
         onSelectedDateChange={onSelectedDateChange}
+        periodsLocked={periodsLocked}
+        onLockedPeriodClick={onLockedPeriodClick}
       >
         <HealthHero
           value={avg !== null ? avg.toLocaleString('ru-RU') : '—'}

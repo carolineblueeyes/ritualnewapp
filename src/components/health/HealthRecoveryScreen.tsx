@@ -6,7 +6,15 @@ import HealthPeriodChart from './HealthPeriodChart';
 import OvernightAreaChart from './OvernightAreaChart';
 import MetricInsightRow from './MetricInsightRow';
 import QualityBadge from './QualityBadge';
-import { qualityHrv, qualityRestingHr } from './healthQuality';
+import {
+  calmIndexFromHrv,
+  calmIndexLabel,
+  computeHeartScore,
+  qualityCalmIndex,
+  qualityHrv,
+  qualityRestingHr,
+  qualitySleepScore,
+} from './healthQuality';
 import { useHealthCategoryData, useRingSeries } from './useHealthCategoryData';
 import { chartDayLabel, finiteOrNull } from './format';
 import type { HealthPeriod } from './types';
@@ -22,6 +30,9 @@ interface HealthRecoveryScreenProps {
   historyHrv: DailyHealthPoint[];
   historyHr: DailyHealthPoint[];
   accentColor: string;
+  onRequestMorningMeasure?: () => void;
+  periodsLocked?: boolean;
+  onLockedPeriodClick?: () => void;
 }
 
 function toChart(points: DailyHealthPoint[], count: number) {
@@ -40,6 +51,9 @@ export default function HealthRecoveryScreen({
   healthMetrics,
   historyHrv,
   historyHr,
+  onRequestMorningMeasure,
+  periodsLocked,
+  onLockedPeriodClick,
 }: HealthRecoveryScreenProps) {
   const { selectedSummary, ringSummaries } = useHealthCategoryData({
     hasRing,
@@ -55,6 +69,11 @@ export default function HealthRecoveryScreen({
   const hrValue = selectedSummary?.restingHR ?? healthMetrics.restingHR;
   const hrvTier = hrvValue !== null ? qualityHrv(hrvValue) : null;
   const hrTier = hrValue !== null ? qualityRestingHr(hrValue) : null;
+  // Протокол 02.09: общая оценка сердца + Индекс спокойствия (инверсия стресса по ВСР).
+  const heartScore = computeHeartScore(hrvValue, hrValue);
+  const heartTier = heartScore !== null ? qualitySleepScore(heartScore) : null;
+  const calmIndex = calmIndexFromHrv(hrvValue);
+  const calmTier = calmIndex !== null ? qualityCalmIndex(calmIndex) : null;
 
   const chartCount = period === 'week' ? 7 : 30;
   const hrvChart = useMemo(() => {
@@ -88,6 +107,8 @@ export default function HealthRecoveryScreen({
         onPeriodChange={onPeriodChange}
         selectedDate={selectedDate}
         onSelectedDateChange={onSelectedDateChange}
+        periodsLocked={periodsLocked}
+        onLockedPeriodClick={onLockedPeriodClick}
       >
         <HealthHero
           value={avgHrv !== null ? Math.round(avgHrv) : '—'}
@@ -118,13 +139,22 @@ export default function HealthRecoveryScreen({
       onSelectedDateChange={onSelectedDateChange}
     >
       <HealthHero
-        value={hrvValue !== null ? Math.round(hrvValue) : '—'}
-        meaning="Вариабельность сердечного ритма, мс"
+        value={heartScore !== null ? heartScore : '—'}
+        meaning={heartScore !== null ? 'Общая оценка сердца' : 'Покой · восстановление'}
       >
-        {hrvTier != null && <QualityBadge tier={hrvTier} />}
+        {heartTier != null && <QualityBadge tier={heartTier} />}
       </HealthHero>
 
       <HealthGroup title="Показатели">
+        <MetricInsightRow
+          label="Индекс спокойствия"
+          value={calmIndex !== null ? `${calmIndex} · ${calmIndexLabel(calmIndex)}` : '—'}
+          hint="Чем выше, тем спокойнее. Считается из ВСР — вместо «стресса»"
+          tier={calmTier}
+          gaugeValue={calmIndex ?? 0}
+          gaugeMax={100}
+          gaugeColor="#7dd3fc"
+        />
         <MetricInsightRow
           label="ВСР"
           value={hrvValue !== null ? `${Math.round(hrvValue)} мс` : '—'}
@@ -179,6 +209,19 @@ export default function HealthRecoveryScreen({
           tier={hrTier}
         />
       )}
+
+      <HealthGroup title="Утренний замер" padded>
+        <p className="text-[13px] text-[#F2EFE8]/50 leading-relaxed">
+          Проснулся — замерь пульс и ВСР. Это самая честная точка спокойствия за сутки.
+        </p>
+        <button
+          type="button"
+          onClick={() => onRequestMorningMeasure?.()}
+          className="mt-3 w-full py-3 rounded-2xl bg-white/[0.06] border border-white/10 text-[13px] font-medium text-[#F2EFE8]/80 active:scale-[0.98] transition-transform"
+        >
+          Замерить сейчас
+        </button>
+      </HealthGroup>
 
       {hrvChart.length >= 2 && (
         <HealthGroup title="Тренд ВСР · 7 дней" padded>

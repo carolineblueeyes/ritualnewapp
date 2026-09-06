@@ -1,15 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { APP_NAME } from '../constants/brand';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wind, Activity, Compass, Volume2, Heart, FlaskConical } from 'lucide-react';
+import { Wind, Activity, Compass, Volume2, Heart, FlaskConical, ChevronRight } from 'lucide-react';
 import { Practice } from '../types';
 import { standaloneData, StandalonePractice, STANDALONE_GROUP_COLORS, STANDALONE_GROUP_TITLES, ChapterId } from '../data/practices';
 import PracticePlayer from './PracticePlayer';
 import PracticeCard from './PracticeCard';
 import StandalonePracticeCard from './StandalonePracticeCard';
-import ToolTile from './ui/ToolTile';
-import SectionMeta from './ui/SectionMeta';
-import GlassSurface from './ui/GlassSurface';
 import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 
 interface PracticesListProps {
@@ -147,54 +144,71 @@ export default function PracticesList({
 
       {!activeStandalone && (
         <>
-          {/* Инструменты — compact glass tiles */}
-          <section className="flex flex-col gap-4">
-            <SectionMeta>Инструменты</SectionMeta>
-            <div className="grid grid-cols-2 gap-3 items-stretch">
-              {TOOL_TILES.map((tile) => (
-                <div key={tile.tool} className="min-h-[104px]">
-                  <ToolTile
-                    title={tile.title}
-                    subtitle={tile.subtitle}
-                    icon={tile.icon}
-                    accent={tile.accent}
-                    onClick={() => onSelectTool(tile.tool)}
-                  />
-                </div>
-              ))}
-            </div>
-            {onOpenInsights && (
-              <GlassSurface as="button" onClick={onOpenInsights} className="p-4 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#7dd3fc]/10 flex items-center justify-center">
-                  <FlaskConical className="w-4 h-4 text-[#7dd3fc]/80" />
-                </div>
-                <div className="text-left">
-                  <p className="text-[15px] font-semibold text-[#F2EFE8]/90">{APP_NAME} Insights</p>
-                  <p className="text-[11px] text-[#F2EFE8]/42 mt-0.5">Исследования внимания и состояния</p>
-                </div>
-              </GlassSurface>
-            )}
+          {/* Editorial header — тем же языком, что «Что ты выбираешь сегодня?» */}
+          <section className="flex flex-col items-start text-left px-1 pt-2">
+            <h2 className="font-display text-[28px] font-light leading-[1.12] text-[#F2EFE8] text-balance">
+              Что практикуем?
+            </h2>
+            <span className="text-[13px] text-[#F2EFE8]/42 mt-2">
+              Ритуалы и инструменты — запуск в один тап
+            </span>
           </section>
 
-          {/* Направление — filters */}
-          <section className="flex flex-col gap-3">
-            <SectionMeta>Направление</SectionMeta>
-            <div className="flex overflow-x-auto gap-2 hide-scrollbar pb-1">
-              {filters.map((filter) => (
-                <button
-                  key={filter.value}
+          {/* Инструменты — горизонтальные пилюли, как быстрый старт в «Сегодня» */}
+          <section className="flex gap-2.5 overflow-x-auto pb-1 hide-scrollbar snap-x snap-mandatory -mx-1 px-1">
+            {TOOL_TILES.map((tile, index) => {
+              const Icon = tile.icon;
+              return (
+                <motion.button
+                  key={tile.tool}
                   type="button"
-                  onClick={() => setActiveFilter(filter.value)}
-                  className={`flex-none px-4 py-2 rounded-full text-[13px] font-medium border transition-colors duration-[160ms] ease-out ${
-                    activeFilter === filter.value
-                      ? 'bg-white/[0.08] text-[#F2EFE8]/90 border-white/12'
-                      : 'bg-transparent text-[#F2EFE8]/42 border-[rgba(242,239,232,0.12)] hover:text-[#F2EFE8]/60'
-                  }`}
+                  onClick={() => onSelectTool(tile.tool)}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.28, delay: index * 0.04, ease: [0.23, 1, 0.32, 1] }}
+                  className="snap-start flex-shrink-0 flex items-center h-12 pl-4 pr-5 rounded-full border border-white/10 bg-white/[0.06] backdrop-blur-md active:scale-[0.97] transition-transform duration-[160ms] ease-out"
                 >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
+                  <Icon className="w-3.5 h-3.5 mr-2.5 flex-shrink-0" style={{ color: tile.accent }} strokeWidth={2} />
+                  <span className="text-[13px] font-medium text-[#F2EFE8]/90 whitespace-nowrap">{tile.title}</span>
+                  <span className="text-[11px] text-[#F2EFE8]/42 whitespace-nowrap ml-1.5">{tile.subtitle}</span>
+                </motion.button>
+              );
+            })}
+          </section>
+
+          {onOpenInsights && (
+            <button
+              type="button"
+              onClick={onOpenInsights}
+              className="group w-full flex items-center gap-3 py-4 border-b border-[rgba(242,239,232,0.12)] text-left active:scale-[0.99] transition-transform duration-[160ms] ease-out"
+            >
+              <div className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center border border-white/[0.08] bg-white/[0.03]">
+                <FlaskConical className="w-4 h-4 text-[#7dd3fc]/80" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-[11px] text-[#F2EFE8]/42 block">Исследования внимания и состояния</span>
+                <span className="text-[15px] font-medium text-[#F2EFE8]/90 block truncate">{APP_NAME} Insights</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-[#F2EFE8]/25 group-hover:text-[#F2EFE8]/50 transition-colors flex-shrink-0" />
+            </button>
+          )}
+
+          {/* Направление — сегмент-контейнер, как переключатели в Health */}
+          <section className="flex gap-1 p-1 rounded-full bg-white/[0.04] border border-white/[0.06] overflow-x-auto hide-scrollbar">
+            {filters.map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                onClick={() => setActiveFilter(filter.value)}
+                className={`flex-1 whitespace-nowrap px-4 py-2 rounded-full text-[13px] font-medium transition-colors duration-[160ms] ease-out active:scale-[0.97] ${
+                  activeFilter === filter.value
+                    ? 'bg-white/[0.10] text-[#F2EFE8]/92'
+                    : 'text-[#F2EFE8]/42'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
           </section>
 
           {/* Base practices — hairline rows */}
@@ -217,13 +231,13 @@ export default function PracticesList({
           {/* Standalone meditations */}
           {standaloneItems.length > 0 && (
             <section className="flex flex-col">
-              <SectionMeta className="mb-3 block">
+              <p className="text-[13px] text-[#F2EFE8]/42 px-1 pb-1">
                 {activeFilter === 'all'
                   ? 'Медитации'
                   : activeFilter === 'favorites'
                     ? 'Избранные медитации'
                     : STANDALONE_GROUP_TITLES[activeFilter]}
-              </SectionMeta>
+              </p>
               {standaloneItems.map((practice, idx) => (
                 <div key={practice.id}>
                   <StandalonePracticeCard

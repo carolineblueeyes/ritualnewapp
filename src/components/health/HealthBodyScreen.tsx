@@ -22,6 +22,10 @@ interface HealthBodyScreenProps {
   historySpo2: DailyHealthPoint[];
   historyTemp: DailyHealthPoint[];
   historyResp: DailyHealthPoint[];
+  cycleSummary?: string | null;
+  onOpenCycle?: () => void;
+  periodsLocked?: boolean;
+  onLockedPeriodClick?: () => void;
 }
 
 function toChart(points: DailyHealthPoint[], count: number) {
@@ -41,6 +45,10 @@ export default function HealthBodyScreen({
   historySpo2,
   historyTemp,
   historyResp,
+  cycleSummary,
+  onOpenCycle,
+  periodsLocked,
+  onLockedPeriodClick,
 }: HealthBodyScreenProps) {
   const { selectedSummary, ringSummaries } = useHealthCategoryData({
     hasRing,
@@ -51,7 +59,10 @@ export default function HealthBodyScreen({
 
   const spo2 = finiteOrNull(selectedSummary?.spo2 ?? healthMetrics.spo2);
   const temp = finiteOrNull(selectedSummary?.temperature ?? healthMetrics.temperature);
-  const resp = finiteOrNull(healthMetrics.respiratoryRate);
+  // Протокол 02.09: частоту дыхания убираем — кольцо не меряет вдохи напрямую
+  // (оценка идёт из PPG/ВСР), у JCRing этого показателя нет. Не показываем,
+  // чтобы не вводить в заблуждение.
+  void historyResp;
   const spo2Tier = spo2 !== null ? qualitySpo2(spo2) : null;
   const tempTier = temp !== null ? qualityTemperature(temp) : null;
 
@@ -90,6 +101,8 @@ export default function HealthBodyScreen({
         onPeriodChange={onPeriodChange}
         selectedDate={selectedDate}
         onSelectedDateChange={onSelectedDateChange}
+        periodsLocked={periodsLocked}
+        onLockedPeriodClick={onLockedPeriodClick}
       >
         <HealthHero
           value={avgSpo2 !== null ? Math.round(avgSpo2) : '—'}
@@ -143,6 +156,7 @@ export default function HealthBodyScreen({
         <MetricInsightRow
           label="Температура"
           value={temp !== null ? `${temp.toFixed(1)}°C` : '—'}
+          hint="Температура кожи на пальце, а не тела. Значения 24–35° — норма датчика; смотрим на отклонение от личной базы, а не на абсолют"
           tier={tempTier}
           gaugeValue={temp ?? 0}
           gaugeMax={38}
@@ -152,12 +166,20 @@ export default function HealthBodyScreen({
           label="Диапазон температуры"
           value={tempMin !== null && tempMax !== null ? `${tempMin.toFixed(1)}–${tempMax.toFixed(1)}°C` : '—'}
         />
-        <MetricInsightRow
-          label="Частота дыхания"
-          value={resp !== null ? `${resp.toFixed(1)} дых/мин` : '—'}
-          hint="Из Health Connect / Apple Health"
-        />
       </HealthGroup>
+
+      {cycleSummary && (
+        <HealthGroup title="Цикл">
+          <button
+            type="button"
+            onClick={() => onOpenCycle?.()}
+            className="flex items-center justify-between py-3.5 w-full text-left active:opacity-80 transition-opacity"
+          >
+            <span className="text-[15px] text-[#F2EFE8]/80">{cycleSummary}</span>
+            <span className="text-[13px] text-[#F2EFE8]/40">Открыть →</span>
+          </button>
+        </HealthGroup>
+      )}
 
       {spo2Series.length >= 2 && (
         <OvernightAreaChart

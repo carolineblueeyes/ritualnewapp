@@ -674,7 +674,7 @@ export default function App() {
                   exit={{ opacity: 0, position: 'absolute', left: 20, right: 20, top: 0 }}
                   transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
                 >
-                  <RitualDashboard 
+                  <RitualDashboard
                     practices={practices}
                     stats={stats}
                     onSelectPractice={handleSelectPractice}
@@ -685,6 +685,8 @@ export default function App() {
                     availabilityByMetric={availabilityByMetric}
                     onRefreshHealth={refreshHealth}
                     onHealthOpenChange={setHealthOverlayOpen}
+                    isSubscribed={isSubscribed}
+                    onOpenSubscription={() => setShowSubscription(true)}
                   />
                 </motion.div>
               )}

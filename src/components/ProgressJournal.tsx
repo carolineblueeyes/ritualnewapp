@@ -3,7 +3,6 @@ import { Check, Plus, Trash2 } from 'lucide-react';
 import type { UserStats } from '../types';
 import { addGoal, addNote, archiveGoal, deleteNote, getAchievementDefinitions, getGoals, getNotes, goalProgress, syncAchievements } from '../services/productState';
 import GlassSurface from './ui/GlassSurface';
-import SectionMeta from './ui/SectionMeta';
 
 export default function ProgressJournal({ stats }: { stats: UserStats }) {
   const [goals, setGoals] = useState(getGoals);
@@ -30,10 +29,10 @@ export default function ProgressJournal({ stats }: { stats: UserStats }) {
   };
 
   return (
-    <div className="py-8 flex flex-col gap-10 border-t border-[rgba(242,239,232,0.12)]">
+    <div className="flex flex-col gap-8">
       {/* Цели — glass card */}
       <section className="flex flex-col gap-4">
-        <SectionMeta>Цели</SectionMeta>
+        <p className="text-[13px] text-[#F2EFE8]/42 px-1">Цели</p>
         <GlassSurface className="p-4 flex flex-col gap-0">
           {goals.map(goal => {
             const progress = goalProgress(goal, stats);
@@ -90,8 +89,7 @@ export default function ProgressJournal({ stats }: { stats: UserStats }) {
 
       {/* Заметки */}
       <section className="flex flex-col gap-4">
-        <SectionMeta>Заметки</SectionMeta>
-        <p className="font-display text-[22px] font-light text-[#F2EFE8]/80 -mt-2">Что ты заметил сегодня?</p>
+        <p className="font-display text-[22px] font-light text-[#F2EFE8]/80">Что ты заметил сегодня?</p>
         <div className="flex gap-3">
           <textarea
             value={noteBody}
@@ -126,7 +124,7 @@ export default function ProgressJournal({ stats }: { stats: UserStats }) {
 
       {/* Достижения — horizontal scroll */}
       <section className="flex flex-col gap-4">
-        <SectionMeta>Достижения</SectionMeta>
+        <p className="text-[13px] text-[#F2EFE8]/42 px-1">Достижения</p>
         <div className="flex gap-5 overflow-x-auto hide-scrollbar pb-2 -mx-1 px-1">
           {achievements.map(item => (
             <div key={item.id} className={`w-28 flex-none ${item.unlocked ? '' : 'opacity-40'}`}>

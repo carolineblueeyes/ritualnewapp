@@ -123,3 +123,56 @@ export function qualitySleepScore(score: number): QualityTier {
   if (score >= 60) return 2;
   return 3;
 }
+
+/**
+ * Индекс спокойствия (протокол 02.09): позитивная инверсия стресса.
+ * Чем выше — тем спокойнее (восстановление лучше). 0–100.
+ * Калибровка по ВСР: 55+ мс — спокойствие высокое, <30 — низкое.
+ */
+export function calmIndexFromHrv(hrvMs: number | null | undefined): number | null {
+  if (hrvMs === null || hrvMs === undefined || !Number.isFinite(hrvMs)) return null;
+  if (hrvMs >= 80) return 95;
+  if (hrvMs >= 55) return Math.round(75 + ((hrvMs - 55) / 25) * 20);
+  if (hrvMs >= 35) return Math.round(50 + ((hrvMs - 35) / 20) * 25);
+  if (hrvMs >= 20) return Math.round(25 + ((hrvMs - 20) / 15) * 25);
+  return Math.max(5, Math.round((hrvMs / 20) * 25));
+}
+
+export function qualityCalmIndex(score: number): QualityTier {
+  if (score >= 70) return 1;
+  if (score >= 45) return 2;
+  return 3;
+}
+
+export function calmIndexLabel(score: number | null): string {
+  if (score === null) return 'Нет данных';
+  if (score >= 70) return 'Спокойствие';
+  if (score >= 45) return 'Умеренное напряжение';
+  return 'Нарушено спокойствие';
+}
+
+/** Общая оценка сердца 0–100 (аналог оценки сна): ВСР + пульс покоя. */
+export function computeHeartScore(
+  hrvMs: number | null | undefined,
+  restingHr: number | null | undefined,
+): number | null {
+  if (
+    (hrvMs === null || hrvMs === undefined) &&
+    (restingHr === null || restingHr === undefined)
+  ) {
+    return null;
+  }
+  let score = 55;
+  if (hrvMs !== null && hrvMs !== undefined) {
+    if (hrvMs >= 55) score += 20;
+    else if (hrvMs >= 35) score += 10;
+    else if (hrvMs >= 20) score += 0;
+    else score -= 12;
+  }
+  if (restingHr !== null && restingHr !== undefined) {
+    if (restingHr >= 50 && restingHr <= 65) score += 15;
+    else if (restingHr >= 45 && restingHr <= 75) score += 5;
+    else if (restingHr > 85 || restingHr < 42) score -= 10;
+  }
+  return Math.max(0, Math.min(100, Math.round(score)));
+}

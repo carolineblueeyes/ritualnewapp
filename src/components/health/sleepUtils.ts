@@ -47,8 +47,15 @@ export function sleepLatencyMinutes(summary: RingDailySummary | null): number | 
   if (!firstAsleep) return null;
   const start = new Date(summary.sleepStart).getTime();
   const asleepAt = new Date(firstAsleep.start).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(asleepAt) || asleepAt <= start) return null;
-  return Math.round((asleepAt - start) / 60_000);
+  if (!Number.isFinite(start) || !Number.isFinite(asleepAt)) return null;
+  // Кольцо уже зафиксировало сон к моменту sleepStart (частый кейс JCRing) —
+  // это засыпание ~0 мин, а не «нет данных». Раньше здесь возвращался null,
+  // из-за чего в UI везде показывался прочерк/глюк засыпания (протокол 02.09).
+  if (asleepAt <= start) return 0;
+  const minutes = Math.round((asleepAt - start) / 60_000);
+  // Отсекаем артефакты: засыпание дольше 3 часов — скорее разрыв трекинга.
+  if (minutes > 180) return null;
+  return Math.max(0, minutes);
 }
 
 /** Heuristic sleep score inspired by JCRing day view (duration + stages + efficiency). */

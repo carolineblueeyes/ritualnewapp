@@ -5,7 +5,7 @@ import {
   Play, Plus, Edit2, X, Check,
   Moon, Sun, Zap, Activity, Wind, Sparkle, Heart, Eye, Thermometer,
   ShoppingBag, Smartphone, Lock, ChevronRight, BookOpen, Clock, ArrowLeft, RefreshCw,
-  Circle, Droplets
+  Circle
 } from 'lucide-react';
 import { Practice, UserStats } from '../types';
 import GlassSurface from './ui/GlassSurface';
@@ -35,6 +35,7 @@ import { ARTICLES } from '../data/articles';
 import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 import SilkShaderBackground from './SilkShaderBackground';
 import ShineTrendPanel from './ShineTrendPanel';
+import YourPathNow from './health/YourPathNow';
 import {
   HealthSleepScreen,
   HealthRecoveryScreen,
@@ -59,6 +60,8 @@ interface RitualDashboardProps {
   availabilityByMetric?: HealthAvailabilityByMetric;
   onRefreshHealth?: () => void | Promise<void>;
   onHealthOpenChange?: (open: boolean) => void;
+  isSubscribed?: boolean;
+  onOpenSubscription?: () => void;
 }
 
 interface TimelineSlot {
@@ -103,6 +106,8 @@ export default function RitualDashboard({
   availabilityByMetric: availabilityByMetricProp,
   onRefreshHealth,
   onHealthOpenChange,
+  isSubscribed,
+  onOpenSubscription,
 }: RitualDashboardProps) {
   const shineScore = shine?.total ?? 0;
   const dataQuality = shine?.dataQuality ?? 'none';
@@ -402,6 +407,15 @@ export default function RitualDashboard({
   const refreshDashboardHealth = async () => {
     await onRefreshHealth?.();
   };
+  const handleRingSyncClick = async () => {
+    if (isRingSyncing) return;
+    setIsRingSyncing(true);
+    try {
+      await onRefreshHealth?.();
+    } finally {
+      window.setTimeout(() => setIsRingSyncing(false), 600);
+    }
+  };
 
   // Weekly chart data
   function normalizeHistoryDate(dateStr: string): string {
@@ -512,6 +526,8 @@ export default function RitualDashboard({
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [isHealthConnecting, setIsHealthConnecting] = useState(false);
   const [healthConnectStep, setHealthConnectStep] = useState('');
+  // Протокол 02.09: явная кнопка синка кольца на «Сегодня» вместо зависания при входе.
+  const [isRingSyncing, setIsRingSyncing] = useState(false);
 
   const getCurrentHealthSourceType = (): HealthConnectSourceType => {
     return healthService.getPlatform() === 'ios' ? 'healthkit' : 'healthconnect';
@@ -599,7 +615,6 @@ export default function RitualDashboard({
   const [categoryPeriod, setCategoryPeriod] = useState<HealthPeriod>('day');
   const [selectedHealthDate, setSelectedHealthDate] = useState(defaultSelectedDate);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<'7' | '30' | '90'>('30');
-  const [showNarrative, setShowNarrative] = useState(true);
   const healthMainRef = useRef<HTMLElement | null>(null);
   const lastHealthOpenRef = useRef(false);
   const healthPillRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -635,12 +650,12 @@ export default function RitualDashboard({
   useEffect(() => {
     const justOpened = isHealthOpen && !lastHealthOpenRef.current;
     lastHealthOpenRef.current = isHealthOpen;
-    if (!justOpened || healthSection !== 'shine' || !showNarrative) return;
+    if (!justOpened || healthSection !== 'shine') return;
     const timer = window.setTimeout(() => {
       primaryDriverCardRef.current?.scrollIntoView({ behavior: 'auto', block: 'center' });
     }, 320);
     return () => window.clearTimeout(timer);
-  }, [isHealthOpen, healthSection, showNarrative, shine?.primaryDriver]);
+  }, [isHealthOpen, healthSection, shine?.primaryDriver]);
 
   const healthMetricCards: Array<{
     uiKey: string;
@@ -664,6 +679,38 @@ export default function RitualDashboard({
     if (uiKey === 'activity' || unit === 'шагов') return `${Math.round(val).toLocaleString('ru-RU')} шагов`;
     return `${Math.round(val)} ${unit}`;
   };
+
+  // Протокол 02.09: «Твой путь сейчас» — текущие 0–100 поверх целей + среднее 7д.
+  const pathSpheres = React.useMemo(() => {
+    const avgOf = (uiKey: string): number | null => {
+      const pts = getAvailableMetricPoints(uiKey, 7).map(p => p.value as number);
+      if (!pts.length) return null;
+      return pts.reduce((a, b) => a + b, 0) / pts.length;
+    };
+    const toScore = (uiKey: string, val: number | null | undefined): number | null => {
+      if (val === null || val === undefined) return null;
+      if (uiKey === 'sleep') return Math.max(0, Math.min(100, (val / 8) * 100));
+      if (uiKey === 'activity') return Math.max(0, Math.min(100, (val / 8000) * 100));
+      if (uiKey === 'hrv') return Math.max(0, Math.min(100, (val / 80) * 100));
+      if (uiKey === 'hr') return Math.max(0, Math.min(100, 100 - Math.max(0, (val - 55)) * 2));
+      return null;
+    };
+    const defs = [
+      { key: 'sleep', label: 'Сон', section: 'sleep' as const, color: '#8D4FFF' },
+      { key: 'hrv', label: 'Покой', section: 'recovery' as const, color: '#6ee7b7' },
+      { key: 'activity', label: 'Активность', section: 'activity' as const, color: '#fcd34d' },
+      { key: 'hr', label: 'Сердце', section: 'recovery' as const, color: '#fca5a5' },
+    ];
+    return defs.map(d => {
+      const card = healthMetricCards.find(c => c.uiKey === d.key);
+      return {
+        ...d,
+        current: toScore(d.key, card?.val),
+        target: 85,
+        weekAvg: toScore(d.key, avgOf(d.key)),
+      };
+    });
+  }, [healthMetrics.sleepHours, healthMetrics.steps, healthMetrics.hrv, healthMetrics.restingHR, historyByMetric]);
 
   const [isCycleOpen, setIsCycleOpen] = useState(false);
 
@@ -713,6 +760,8 @@ export default function RitualDashboard({
   const userGender = typeof window !== 'undefined' ? (localStorage.getItem('ritual_user_gender') || 'unspecified') : 'unspecified';
   const showCycleSection = userGender !== 'male';
 
+  // Протокол 02.09: отдельную вкладку «Цикл» убираем — цикл живёт компактной
+  // строкой внутри «Тела» (открывается оттуда же через openHealthSection('cycle')).
   const healthNavItems: Array<{
     id: HealthSection;
     label: string;
@@ -723,15 +772,15 @@ export default function RitualDashboard({
     { id: 'recovery', label: 'Покой', icon: Heart },
     { id: 'activity', label: 'Активность', icon: Zap },
     { id: 'body', label: 'Тело', icon: Wind },
-    ...(showCycleSection ? [{ id: 'cycle' as const, label: 'Цикл', icon: Droplets }] : []),
     ...(dashboardHasRing ? [{ id: 'ring' as const, label: 'Кольцо', icon: Circle }] : []),
   ];
 
   useEffect(() => {
-    if (!healthNavItems.some(item => item.id === healthSection)) {
+    // 'cycle' валиден как детальный экран из Тела, даже без вкладки в навбаре.
+    if (healthSection !== 'cycle' && !healthNavItems.some(item => item.id === healthSection)) {
       setHealthSection('shine');
     }
-  }, [healthSection, showCycleSection, dashboardHasRing]);
+  }, [healthSection, dashboardHasRing]);
 
   useEffect(() => {
     if (isFocusLockedToday) {
@@ -810,6 +859,17 @@ export default function RitualDashboard({
                 <SilkShaderBackground accentColor={accentColor} />
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/25" />
               </div>
+
+              {(dashboardHasRing || (healthSource && healthSource !== 'none')) && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleRingSyncClick(); }}
+                  aria-label="Обновить данные кольца"
+                  className="absolute z-20 top-[calc(env(safe-area-inset-top)+3.5rem)] right-4 w-9 h-9 rounded-full bg-black/30 border border-white/10 backdrop-blur-md flex items-center justify-center text-[#F2EFE8]/60 active:scale-95 transition-transform"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRingSyncing ? 'animate-spin' : ''}`} />
+                </button>
+              )}
 
               <button
                 type="button"
@@ -1318,23 +1378,6 @@ export default function RitualDashboard({
                       )}
                     </div>
 
-                    <div className="flex gap-1 p-1 rounded-full bg-white/[0.04] border border-white/[0.06] w-full max-w-[280px] mx-auto">
-                      <button
-                        type="button"
-                        onClick={() => setShowNarrative(true)}
-                        className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-colors duration-[160ms] ${showNarrative ? 'bg-white/[0.10] text-[#F2EFE8]/92' : 'text-[#F2EFE8]/42'}`}
-                      >
-                        Нарратив
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowNarrative(false)}
-                        className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-colors duration-[160ms] ${!showNarrative ? 'bg-white/[0.10] text-[#F2EFE8]/92' : 'text-[#F2EFE8]/42'}`}
-                      >
-                        Статистика
-                      </button>
-                    </div>
-
                     {healthSource === 'none' && !dashboardHasRing && (
                       <HealthGroup padded>
                         <span className="text-[15px] text-[#F2EFE8]/90 block">Данные здоровья</span>
@@ -1354,8 +1397,35 @@ export default function RitualDashboard({
                       </HealthGroup>
                     )}
 
-                    {showNarrative ? (
-                      <>
+                    <>
+                      <div className="flex items-center justify-between px-1">
+                          <span className="text-[13px] text-[#F2EFE8]/50">
+                            Разбор от Rail · история дня
+                          </span>
+                          {!isSubscribed && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenSubscription?.()}
+                              className="flex items-center gap-1 text-[12px] text-amber-300/90 active:scale-95 transition-transform"
+                            >
+                              <Lock className="w-3 h-3" /> Rail
+                            </button>
+                          )}
+                        </div>
+                        {!isSubscribed && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenSubscription?.()}
+                            className="rounded-[22px] border border-amber-200/20 bg-amber-200/[0.06] p-4 text-left active:scale-[0.99] transition-transform"
+                          >
+                            <span className="text-[14px] text-[#F2EFE8]/85 block">
+                              Полный разбор дня — что хотела / что получила — делает Rail
+                            </span>
+                            <span className="text-[13px] text-[#F2EFE8]/50 block mt-1">
+                              Неделя и месяц тоже открываются подпиской. Нажми, чтобы узнать больше.
+                            </span>
+                          </button>
+                        )}
                         <HealthGroup
                           onClick={() => { if (!isFocusLockedToday) openIntentionModal(); }}
                           padded
@@ -1412,6 +1482,7 @@ export default function RitualDashboard({
                           primaryCardRef={primaryDriverCardRef}
                           defaultExpandPrimary
                         />
+                        <YourPathNow spheres={pathSpheres} onOpenSection={openHealthSection} />
                         {showCycleSection && (
                           <HealthGroup>
                             <button
@@ -1433,9 +1504,9 @@ export default function RitualDashboard({
                             </button>
                           </HealthGroup>
                         )}
-                    </>
-                  ) : (
-                    (() => {
+                    {(() => {
+                      // Протокол 02.09: переключателя Нарратив/Статистика больше нет —
+                      // статистика вынесена вниз единого скролла после «Твоего пути сейчас».
                       const shineDays = getHistoricalAnalytics(analyticsPeriod);
                       const selectedIndex = selectedTrendDay !== null && selectedTrendDay < shineDays.length
                         ? selectedTrendDay
@@ -1476,8 +1547,8 @@ export default function RitualDashboard({
                           />
                         </>
                       );
-                    })()
-                    )}
+                    })()}
+                    </>
                   </div>
                 )}
 
@@ -1492,6 +1563,8 @@ export default function RitualDashboard({
                       historySleep={historyByMetric.sleepHours}
                       accentColor={accentColor}
                       shine={shine}
+                      periodsLocked={!isSubscribed}
+                      onLockedPeriodClick={() => onOpenSubscription?.()}
                     />
                   </div>
                 )}
@@ -1508,6 +1581,9 @@ export default function RitualDashboard({
                       historyHrv={historyByMetric.hrv}
                       historyHr={historyByMetric.restingHR}
                       accentColor={accentColor}
+                      onRequestMorningMeasure={() => { void refreshDashboardHealth(); }}
+                      periodsLocked={!isSubscribed}
+                      onLockedPeriodClick={() => onOpenSubscription?.()}
                     />
                   </div>
                 )}
@@ -1523,6 +1599,8 @@ export default function RitualDashboard({
                       healthMetrics={healthMetrics}
                       historySteps={historyByMetric.steps}
                       accentColor={accentColor}
+                      periodsLocked={!isSubscribed}
+                      onLockedPeriodClick={() => onOpenSubscription?.()}
                     />
                   </div>
                 )}
@@ -1539,6 +1617,14 @@ export default function RitualDashboard({
                       historySpo2={historyByMetric.spo2}
                       historyTemp={historyByMetric.temperature}
                       historyResp={historyByMetric.respiratoryRate}
+                      cycleSummary={showCycleSection
+                        ? (isPregnancyMode
+                          ? 'Беременность · второй триместр'
+                          : `${CYCLE_PHASE_LABEL[cyclePhase] ?? 'Цикл'} · ${cycleDay}-й день`)
+                        : null}
+                      onOpenCycle={() => openHealthSection('cycle')}
+                      periodsLocked={!isSubscribed}
+                      onLockedPeriodClick={() => onOpenSubscription?.()}
                     />
                   </div>
                 )}

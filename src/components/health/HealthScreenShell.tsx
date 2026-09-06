@@ -9,6 +9,9 @@ interface HealthScreenShellProps {
   selectedDate: string;
   onSelectedDateChange: (date: string) => void;
   children: React.ReactNode;
+  /** Протокол 02.09: неделя/месяц — через разбор Rail (подписка). */
+  periodsLocked?: boolean;
+  onLockedPeriodClick?: () => void;
 }
 
 const PERIODS: Array<{ id: HealthPeriod; label: string }> = [
@@ -23,25 +26,34 @@ export default function HealthScreenShell({
   selectedDate,
   onSelectedDateChange,
   children,
+  periodsLocked,
+  onLockedPeriodClick,
 }: HealthScreenShellProps) {
   return (
     <div className="flex flex-col gap-6 pb-4">
       <div className="flex gap-1 p-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
-        {PERIODS.map(item => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => {
-              onPeriodChange(item.id);
-              onSelectedDateChange(alignDateToPeriod(selectedDate, item.id));
-            }}
-            className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-colors duration-[160ms] ease-out active:scale-[0.97] ${
-              period === item.id ? 'bg-white/[0.10] text-[#F2EFE8]/92' : 'text-[#F2EFE8]/42'
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
+        {PERIODS.map(item => {
+          const locked = periodsLocked && item.id !== 'day';
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                if (locked) {
+                  onLockedPeriodClick?.();
+                  return;
+                }
+                onPeriodChange(item.id);
+                onSelectedDateChange(alignDateToPeriod(selectedDate, item.id));
+              }}
+              className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-colors duration-[160ms] ease-out active:scale-[0.97] ${
+                period === item.id ? 'bg-white/[0.10] text-[#F2EFE8]/92' : 'text-[#F2EFE8]/42'
+              }`}
+            >
+              {item.label}{locked ? ' · Rail' : ''}
+            </button>
+          );
+        })}
       </div>
 
       <PeriodRing

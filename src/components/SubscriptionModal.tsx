@@ -12,7 +12,7 @@ export default function SubscriptionModal({ onClose, onSubscribe }: Subscription
   const [selectedPlan, setSelectedPlan] = useState<'month' | 'year'>('year');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-xl ritual-nebula" style={{ '--nebula-color': '#ff5a3d' } as React.CSSProperties}>
+    <div className="fixed inset-0 z-[230] flex items-end justify-center bg-black/70 backdrop-blur-xl ritual-nebula" style={{ '--nebula-color': '#ff5a3d' } as React.CSSProperties}>
       {/* Click outside to close */}
       <div className="absolute inset-0" onClick={onClose} />
 

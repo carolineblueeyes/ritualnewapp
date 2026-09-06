@@ -55,6 +55,8 @@ interface HealthSleepScreenProps {
   historySleep: DailyHealthPoint[];
   accentColor: string;
   shine?: ShineBreakdown;
+  periodsLocked?: boolean;
+  onLockedPeriodClick?: () => void;
 }
 
 const SLEEP_GOAL_MINUTES = 480;
@@ -75,6 +77,8 @@ export default function HealthSleepScreen({
   hasRing,
   healthMetrics,
   historySleep,
+  periodsLocked,
+  onLockedPeriodClick,
 }: HealthSleepScreenProps) {
   const { loading, selectedSummary, ringSummaries } = useHealthCategoryData({
     hasRing,
@@ -143,6 +147,8 @@ export default function HealthSleepScreen({
         onPeriodChange={onPeriodChange}
         selectedDate={selectedDate}
         onSelectedDateChange={onSelectedDateChange}
+        periodsLocked={periodsLocked}
+        onLockedPeriodClick={onLockedPeriodClick}
       >
         <HealthHero
           value={avg !== null ? formatDurationHours(avg) : '—'}
@@ -172,6 +178,8 @@ export default function HealthSleepScreen({
       onPeriodChange={onPeriodChange}
       selectedDate={selectedDate}
       onSelectedDateChange={onSelectedDateChange}
+      periodsLocked={periodsLocked}
+      onLockedPeriodClick={onLockedPeriodClick}
     >
       <HealthHero
         value={asleepHours !== null ? formatDurationHours(asleepHours) : '—'}
