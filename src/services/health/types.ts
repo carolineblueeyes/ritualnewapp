@@ -25,7 +25,15 @@ export interface HealthMetrics {
   temperature: number | null;
   respiratoryRate: number | null;
   deepSleepPercent?: number | null;
+  remSleepPercent?: number | null;
   sleepInterruptions?: number | null;
+  sleepMidpointHours?: number | null;
+  sleepEfficiency?: number | null;
+  sleepLatencyMinutes?: number | null;
+  sleepStart?: string | null;
+  sleepEnd?: string | null;
+  timeInBedHours?: number | null;
+  wasoMinutes?: number | null;
   distance?: number | null;
   calories?: number | null;
   activeMinutes?: number | null;
@@ -42,8 +50,26 @@ export interface HealthProfileContext {
   age?: number | null;
   gender?: UserGender;
   cycleDay?: number | null;
+  cycleLength?: number | null;
   cyclePhase?: CyclePhase;
   pregnancyMode?: boolean;
+  pregnancyTrimester?: 1 | 2 | 3 | null;
+  /** Середина сна сегодня, часы 0–24. Нужно для регулярности и циркадного штрафа. */
+  sleepMidpointHours?: number | null;
+}
+
+export interface SleepNight {
+  date: string;
+  sleepStart: string | null;
+  sleepEnd: string | null;
+  midpointHours: number | null;
+  efficiency: number | null;
+  latencyMinutes: number | null;
+  deepPercent: number | null;
+  remPercent: number | null;
+  sleepHours: number | null;
+  wasoMinutes: number | null;
+  source: HealthSource;
 }
 
 export interface DailyHealthPoint {

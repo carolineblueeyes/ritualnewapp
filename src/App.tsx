@@ -182,6 +182,8 @@ export default function App() {
     shine,
     historyByMetric,
     availabilityByMetric,
+    sleepNights,
+    sleepDebtHours,
   } = useHealthData();
   const [activeTab, setActiveTab] = useState<ActiveTab>('today');
 
@@ -683,6 +685,8 @@ export default function App() {
                     healthMetrics={healthMetrics}
                     historyByMetric={historyByMetric}
                     availabilityByMetric={availabilityByMetric}
+                    sleepNights={sleepNights}
+                    sleepDebtHours={sleepDebtHours}
                     onRefreshHealth={refreshHealth}
                     onHealthOpenChange={setHealthOverlayOpen}
                     isSubscribed={isSubscribed}

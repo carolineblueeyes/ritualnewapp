@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { EMPTY_METRICS, type HealthMetrics } from './types';
 import { X6Ring, type RingCandidate, type RingDailySummary, type RingDeviceInfo, type RingPoint, type RingDataType } from './x6RingPlugin';
 import { withMergedNightSleep } from '../../components/health/sleepUtils';
+import { applySleepEnrichment, enrichSleepFromSummary } from './sleep';
 
 const ADDRESS_KEY = 'ritual_ring_address';
 const CONNECTED_KEY = 'ritual_ble_ring_connected';
@@ -264,7 +265,7 @@ export const bleRingService = {
       ]);
       const summary = withMergedNightSleep(rawToday) ?? rawToday;
       const previousSummary = rawPrevious ? withMergedNightSleep(rawPrevious) : null;
-      return {
+      const base: HealthMetrics = {
         hrv: summary.hrv,
         sleepHours: selectRecentSleepHours(summary, previousSummary),
         steps: summary.steps,
@@ -280,6 +281,11 @@ export const bleRingService = {
         source: 'ring',
         lastSync: summary.lastSync,
       };
+      // Богатый сон кольца (midpoint, efficiency, latency, стадии) — в движок.
+      const activeSummary = (base.sleepHours ?? 0) > 0 && (summary.sleepHours ?? 0) <= 0 && previousSummary
+        ? previousSummary
+        : summary;
+      return applySleepEnrichment(base, enrichSleepFromSummary(activeSummary));
     } catch (error) {
       console.warn('[X6Ring] Sync failed:', error);
       return { ...EMPTY_METRICS, source: 'ring' };

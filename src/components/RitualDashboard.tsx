@@ -29,12 +29,14 @@ import {
   HealthMetrics,
   HealthMetricKey,
   MetricAvailability,
+  SleepNight,
 } from '../services/health/types';
 import { notificationService, rescheduleAll } from '../services/notifications';
 import { ARTICLES } from '../data/articles';
 import { requestPrivacySafeSync } from '../services/supabase/privacySync';
 import SilkShaderBackground from './SilkShaderBackground';
 import ShineTrendPanel from './ShineTrendPanel';
+import SleepDebtCard from './health/SleepDebtCard';
 import YourPathNow from './health/YourPathNow';
 import {
   HealthSleepScreen,
@@ -58,6 +60,8 @@ interface RitualDashboardProps {
   healthMetrics?: HealthMetrics;
   historyByMetric?: HealthHistoryByMetric;
   availabilityByMetric?: HealthAvailabilityByMetric;
+  sleepNights?: SleepNight[];
+  sleepDebtHours?: number;
   onRefreshHealth?: () => void | Promise<void>;
   onHealthOpenChange?: (open: boolean) => void;
   isSubscribed?: boolean;
@@ -104,6 +108,8 @@ export default function RitualDashboard({
   healthMetrics: healthMetricsProp,
   historyByMetric: historyByMetricProp,
   availabilityByMetric: availabilityByMetricProp,
+  sleepNights: sleepNightsProp,
+  sleepDebtHours: sleepDebtHoursProp,
   onRefreshHealth,
   onHealthOpenChange,
   isSubscribed,
@@ -976,6 +982,9 @@ export default function RitualDashboard({
                 <Play className="w-4 h-4 text-[#F2EFE8] fill-current ml-0.5" />
               </div>
             </GlassSurface>
+
+            {/* ===== SLEEP DEBT + BEDTIME ===== */}
+            <SleepDebtCard nights={sleepNightsProp ?? []} debtHours={sleepDebtHoursProp} />
 
             {/* ===== QUICK START ===== */}
             <section>

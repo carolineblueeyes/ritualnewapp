@@ -9,9 +9,11 @@ import {
   HealthMetrics,
   HealthSnapshot,
   HEALTH_METRIC_KEYS,
+  SleepNight,
 } from './types';
 import { healthService } from './health.service';
 import { bleRingService } from './ring';
+import { enrichSleepFromSummary, midpointHours } from './sleep';
 
 export type DataSource = 'ring' | 'healthapp' | 'none';
 
@@ -27,8 +29,47 @@ export interface CombinedHealthState {
 }
 
 const CACHE_KEY = 'ritual_health_cache_v2';
-const HISTORY_KEY = 'ritual_health_history_v1';
+const HISTORY_KEY = 'ritual_health_history_v2';
+const LEGACY_HISTORY_KEY = 'ritual_health_history_v1';
+const SLEEP_NIGHTS_KEY = 'ritual_sleep_nights_v1';
+const HISTORY_WINDOW_DAYS = 90;
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function normalizeSleepNights(nights: SleepNight[]): SleepNight[] {
+  const byDate = new Map<string, SleepNight>();
+  for (const night of nights || []) {
+    if (!night?.date) continue;
+    const existing = byDate.get(night.date);
+    if (!existing || (night.sleepHours ?? 0) >= (existing.sleepHours ?? 0)) {
+      byDate.set(night.date, night);
+    }
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-HISTORY_WINDOW_DAYS);
+}
+
+export function loadSleepNights(): SleepNight[] {
+  try {
+    const raw = localStorage.getItem(SLEEP_NIGHTS_KEY);
+    if (!raw) return [];
+    return normalizeSleepNights(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+export function saveSleepNights(nights: SleepNight[]): void {
+  try {
+    localStorage.setItem(SLEEP_NIGHTS_KEY, JSON.stringify(normalizeSleepNights(nights)));
+  } catch {}
+}
+
+export function upsertSleepNight(night: SleepNight): SleepNight[] {
+  const nights = loadSleepNights().filter(item => item.date !== night.date);
+  nights.push(night);
+  const normalized = normalizeSleepNights(nights);
+  saveSleepNights(normalized);
+  return normalized;
+}
 
 function normalizeDailyPoints(points: DailyHealthPoint[]): DailyHealthPoint[] {
   const byDate = new Map<string, DailyHealthPoint>();
@@ -39,7 +80,7 @@ function normalizeDailyPoints(points: DailyHealthPoint[]): DailyHealthPoint[] {
       || (point.source === existing.source && (point.lastSync || '') >= (existing.lastSync || ''));
     if (shouldReplace) byDate.set(point.date, point);
   }
-  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-30);
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-HISTORY_WINDOW_DAYS);
 }
 
 function normalizeHistory(history: HealthHistoryByMetric): HealthHistoryByMetric {
@@ -98,10 +139,11 @@ function saveHistory(historyByMetric: HealthHistoryByMetric) {
 
 function loadHistory(): HealthHistoryByMetric {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = localStorage.getItem(HISTORY_KEY) ?? localStorage.getItem(LEGACY_HISTORY_KEY);
     if (!raw) return { ...EMPTY_HISTORY_BY_METRIC };
     const normalized = normalizeHistory(JSON.parse(raw));
     localStorage.setItem(HISTORY_KEY, JSON.stringify(normalized));
+    localStorage.removeItem(LEGACY_HISTORY_KEY);
     return normalized;
   } catch {
     return { ...EMPTY_HISTORY_BY_METRIC };
@@ -243,14 +285,64 @@ export async function fetchHealthData(): Promise<CombinedHealthState> {
     && localStorage.getItem(healthConnectionKey) === 'true'
     && await healthService.isAvailable();
 
-  let snapshot = hasHealthApp ? await healthService.getSnapshot(7) : emptySnapshot('none');
+  let snapshot = hasHealthApp ? await healthService.getSnapshot(HISTORY_WINDOW_DAYS) : emptySnapshot('none');
   if (!hasHealthApp) {
     snapshot.historyByMetric = loadHistory();
+  } else if (snapshot.metrics.sleepHours != null) {
+    // Ночи HealthKit/HealthConnect — в ту же долгую историю что кольцо.
+    upsertSleepNight({
+      date: new Date().toISOString().slice(0, 10),
+      sleepStart: snapshot.metrics.sleepStart ?? null,
+      sleepEnd: snapshot.metrics.sleepEnd ?? null,
+      midpointHours: snapshot.metrics.sleepMidpointHours ?? null,
+      efficiency: snapshot.metrics.sleepEfficiency ?? null,
+      latencyMinutes: snapshot.metrics.sleepLatencyMinutes ?? null,
+      deepPercent: snapshot.metrics.deepSleepPercent ?? null,
+      remPercent: snapshot.metrics.remSleepPercent ?? null,
+      sleepHours: snapshot.metrics.sleepHours,
+      wasoMinutes: snapshot.metrics.wasoMinutes ?? null,
+      source: snapshot.metrics.source,
+    });
   }
 
   if (hasRing) {
-    const ringMetrics = await bleRingService.getMetrics();
+    const [ringMetrics, todaySummary] = await Promise.all([
+      bleRingService.getMetrics(),
+      bleRingService.getDailySummary().catch(() => null),
+    ]);
     snapshot = mergeRingSnapshot(snapshot, ringMetrics);
+    // Ночь в долгую историю: midpoint/efficiency для регулярности и долга.
+    const summaryDate = todaySummary?.date ?? new Date().toISOString().slice(0, 10);
+    if (todaySummary && (todaySummary.sleepHours ?? 0) > 0) {
+      const enrichment = enrichSleepFromSummary(todaySummary);
+      upsertSleepNight({
+        date: summaryDate,
+        sleepStart: enrichment.sleepStart,
+        sleepEnd: enrichment.sleepEnd,
+        midpointHours: enrichment.sleepMidpointHours,
+        efficiency: enrichment.sleepEfficiency,
+        latencyMinutes: enrichment.sleepLatencyMinutes,
+        deepPercent: enrichment.deepSleepPercent,
+        remPercent: enrichment.remSleepPercent,
+        sleepHours: enrichment.sleepHours,
+        wasoMinutes: enrichment.wasoMinutes,
+        source: 'ring',
+      });
+    } else if (ringMetrics.sleepMidpointHours != null || ringMetrics.sleepHours != null) {
+      upsertSleepNight({
+        date: summaryDate,
+        sleepStart: ringMetrics.sleepStart ?? null,
+        sleepEnd: ringMetrics.sleepEnd ?? null,
+        midpointHours: ringMetrics.sleepMidpointHours ?? midpointHours(ringMetrics.sleepStart ?? null, ringMetrics.sleepEnd ?? null),
+        efficiency: ringMetrics.sleepEfficiency ?? null,
+        latencyMinutes: ringMetrics.sleepLatencyMinutes ?? null,
+        deepPercent: ringMetrics.deepSleepPercent ?? null,
+        remPercent: ringMetrics.remSleepPercent ?? null,
+        sleepHours: ringMetrics.sleepHours,
+        wasoMinutes: ringMetrics.wasoMinutes ?? null,
+        source: 'ring',
+      });
+    }
   }
 
   if (!hasHealthApp && !hasRing) {

@@ -8,11 +8,13 @@ import {
   HealthMetrics,
   EMPTY_METRICS,
 } from '../services/health/types';
-import { fetchHealthData, DataSource, clearHealthCache } from '../services/health/manager';
+import { fetchHealthData, DataSource, clearHealthCache, loadSleepNights } from '../services/health/manager';
 import { healthService } from '../services/health/health.service';
 import { connectHealthSource, HealthConnectSourceType } from '../services/health/connectFlow';
 import { bleRingService } from '../services/health/ring';
 import { calculateShine, ShineBreakdown } from '../services/health/shine';
+import { sleepDebt } from '../services/health/sleep';
+import type { SleepNight } from '../services/health/types';
 import { scheduleHealthInsight } from '../services/notifications';
 
 interface UseHealthDataReturn {
@@ -22,6 +24,8 @@ interface UseHealthDataReturn {
   source: DataSource;
   hasRing: boolean;
   hasHealthApp: boolean;
+  sleepNights: SleepNight[];
+  sleepDebtHours: number;
   loading: boolean;
   shine: ShineBreakdown;
   refresh: () => Promise<void>;
@@ -48,12 +52,14 @@ export function useHealthData(): UseHealthDataReturn {
   const [source, setSource] = useState<DataSource>('none');
   const [hasRing, setHasRing] = useState(false);
   const [hasHealthApp, setHasHealthApp] = useState(false);
+  const [sleepNights, setSleepNights] = useState<SleepNight[]>(() => loadSleepNights());
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const result = await fetchHealthData();
+      setSleepNights(loadSleepNights());
       setState(prevMetrics => {
         if (prevMetrics.hrv !== null && prevMetrics.hrv > 0 && result.metrics.hrv !== null && result.metrics.hrv > 0) {
           const change = Math.round(((result.metrics.hrv - prevMetrics.hrv) / prevMetrics.hrv) * 100);
@@ -139,15 +145,23 @@ export function useHealthData(): UseHealthDataReturn {
   const shine = useMemo(() => {
     void getPracticesCompleted();
     const age = Number(localStorage.getItem('ritual_user_age'));
+    const midpoint = state.sleepMidpointHours
+      ?? sleepNights.filter(night => night.midpointHours != null).slice(-1)[0]?.midpointHours
+      ?? null;
     return calculateShine(state, {
       historyByMetric,
+      sleepNights,
+      sleepDebtHours: sleepDebt(sleepNights),
+      sleepMidpointHours: midpoint,
       age: Number.isFinite(age) && age >= 18 ? age : null,
       gender: (localStorage.getItem('ritual_user_gender') as 'male' | 'female' | 'unspecified') || 'unspecified',
       cycleDay: Number(localStorage.getItem('ritual_cycle_day')) || null,
       cyclePhase: (localStorage.getItem('ritual_cycle_phase') as 'menstrual' | 'follicular' | 'ovulatory' | 'luteal' | null),
       pregnancyMode: localStorage.getItem('ritual_pregnancy_mode') === 'true',
     });
-  }, [state, historyByMetric]);
+  }, [state, historyByMetric, sleepNights]);
+
+  const sleepDebtHours = useMemo(() => sleepDebt(sleepNights), [sleepNights]);
 
   return {
     metrics: state,
@@ -156,6 +170,8 @@ export function useHealthData(): UseHealthDataReturn {
     source,
     hasRing,
     hasHealthApp,
+    sleepNights,
+    sleepDebtHours,
     loading,
     shine,
     refresh,
